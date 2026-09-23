@@ -1,0 +1,51 @@
+# ============================================================
+#  Автоматическая сборка Charon Code в .exe НА СЕРВЕРАХ GITHUB
+#  ------------------------------------------------------------
+#  Ты ничего не ставишь на свой ПК:
+#   1) загружаешь файлы проекта в репозиторий (через браузер)
+#   2) GitHub запускает Windows-сервер, который:
+#        npm install → electron-builder → .exe
+#   3) ты скачиваешь готовые .exe из "Artifacts"
+#
+#  Запуск: вкладка Actions → "Build Charon Code" → Run workflow
+#  (собирается автоматически и при любом обновлении файлов)
+# ============================================================
+name: Build Charon Code
+
+on:
+  # кнопка "Run workflow" в Actions
+  workflow_dispatch:
+  # авто-сборка при изменении файлов
+  push:
+    branches: [main, master]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest   # настоящий Windows-сервер
+    steps:
+      - name: Выгрузка исходников
+        uses: actions/checkout@v4
+
+      - name: Установка Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Установка зависимостей (electron, electron-builder)
+        run: npm install
+
+      - name: Сборка .exe (electron-builder)
+        run: npm run dist
+        # Если захочешь подписывать exe своим сертификатом — раскомментируй:
+        # env:
+        #   CSC_LINK: <баз64-сертификат или ссылка>
+        #   CSC_KEY_PASSWORD: <пароль ключа>
+
+      - name: Публикация готовых файлов
+        uses: actions/upload-artifact@v4
+        with:
+          name: CharonCode-Windows
+          path: |
+            dist/*.exe
+          if-no-files-found: error
+          retention-days: 30

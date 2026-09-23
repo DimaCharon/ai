@@ -1,0 +1,628 @@
+/* ============================================================
+   ui.js — интерфейс Charon Code (рендерер)
+   ------------------------------------------------------------
+   Авторизация (локальная) · титлбар · Overview (реальная
+   статистика) · модели трёх провайдеров · сессия Arena ·
+   дровер «Файлы/Терминал» · поповеры · модалки · тосты.
+   ============================================================ */
+(() => {
+  "use strict";
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => [...document.querySelectorAll(s)];
+
+  /* ============================================================
+     ТОСТЫ / МОДАЛКИ
+     ============================================================ */
+  function toast(msg, ms = 2600) {
+    const t = document.createElement("div");
+    t.className = "toast glass";
+    t.textContent = msg;
+    $("#toasts").appendChild(t);
+    requestAnimationFrame(() => t.classList.add("in"));
+    setTimeout(() => {
+      t.classList.remove("in");
+      setTimeout(() => t.remove(), 320);
+    }, ms);
+  }
+
+  /** Подтверждение пользователя (запись файла / запуск команды). */
+  function confirm(title, detail, yesLabel = "Подтвердить") {
+    return new Promise((resolve) => {
+      $("#confirm-title").textContent = title;
+      const d = $("#confirm-detail");
+      d.textContent = detail;
+      d.style.whiteSpace = "pre-wrap";
+      $("#confirm-yes").textContent = yesLabel;
+      const modal = $("#modal-confirm");
+      modal.classList.remove("hidden");
+      const done = (v) => {
+        modal.classList.add("hidden");
+        $("#confirm-yes").onclick = null;
+        $("#confirm-no").onclick = null;
+        resolve(v);
+      };
+      $("#confirm-yes").onclick = () => done(true);
+      $("#confirm-no").onclick = () => done(false);
+    });
+  }
+
+  /** Диагностическое окно ошибки (на русском) + «Переподключиться». */
+  let errorRetry = null;
+  function showError(message, retryable, onRetry) {
+    $("#err-text").textContent = message;
+    $("#err-retry").classList.toggle("hidden", !retryable);
+    errorRetry = onRetry || null;
+    $("#modal-error").classList.remove("hidden");
+  }
+  $("#err-close").addEventListener("click", () => $("#modal-error").classList.add("hidden"));
+  $("#err-retry").addEventListener("click", () => {
+    $("#modal-error").classList.add("hidden");
+    if (errorRetry) { const f = errorRetry; errorRetry = null; f(); }
+  });
+
+  /* ============================================================
+     ПОПОВЕРЫ: открытие/закрытие
+     ============================================================ */
+  const pops = {
+    model: $("#pop-model"),
+    history: $("#pop-history"),
+    settings: $("#pop-settings"),
+    whats: $("#pop-whats"),
+  };
+  function openPop(name) {
+    Object.entries(pops).forEach(([k, el]) => el.classList.toggle("hidden", k !== name));
+  }
+  function closePops() {
+    Object.values(pops).forEach((el) => el.classList.add("hidden"));
+  }
+  $$("[data-close]").forEach((b) =>
+    b.addEventListener("click", (e) => { e.stopPropagation(); closePops(); })
+  );
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".pop")) closePops();
+  });
+
+  /* ============================================================
+     АВТОРИЗАЦИЯ (только локально, на этом ПК)
+     ============================================================ */
+  let authMode = "login";
+  function setAuthMode(m) {
+    authMode = m;
+    $("#tab-login").classList.toggle("active", m === "login");
+    $("#tab-reg").classList.toggle("active", m === "reg");
+    const reg = m === "reg";
+    $("#pass2-wrap").classList.toggle("hidden", !reg);
+    $("#auth-pass2").classList.toggle("hidden", !reg);
+    $("#auth-submit").textContent = reg ? "Зарегистрироваться" : "Войти";
+    $("#auth-err").textContent = "";
+  }
+  $("#tab-login").addEventListener("click", () => setAuthMode("login"));
+  $("#tab-reg").addEventListener("click", () => setAuthMode("reg"));
+
+  async function doAuth() {
+    const u = $("#auth-user").value.trim();
+    const p = $("#auth-pass").value;
+    const p2 = $("#auth-pass2").value;
+    $("#auth-err").textContent = "";
+    try {
+      let r;
+      if (authMode === "login") r = await cc.auth.login(u, p);
+      else {
+        if (p !== p2) throw new Error("Пароли не совпадают.");
+        r = await cc.auth.register(u, p);
+      }
+      await enterApp(r.username);
+    } catch (e) {
+      $("#auth-err").textContent = e.message || String(e);
+    }
+  }
+  $("#auth-submit").addEventListener("click", doAuth);
+  ["#auth-user", "#auth-pass", "#auth-pass2"].forEach((s) =>
+    $(s).addEventListener("keydown", (e) => { if (e.key === "Enter") doAuth(); })
+  );
+
+  /** Вход в приложение после авторизации. */
+  async function enterApp(username) {
+    $("#greet-name").textContent = username;
+    $("#auth-screen").classList.add("hidden");
+    $("#app-screen").classList.remove("hidden");
+
+    const s = await cc.settings.get();
+    applyModelBadge(s.model.provider, s.model.id);
+    // сохраняем выбранную модель в состояние чата (иначе первая
+    // отправка будет игнорироваться — providerId пуст)
+    const cst = window.CC.Chat.state;
+    cst.providerId = s.model.provider;
+    cst.modelId = s.model.id;
+    cst.modelName = s.model.id;
+
+    loadModels();
+    loadStats();
+    checkArenaSilent();
+
+    // мини-маскот в строке папок
+    miniSprite = new window.CharonSprite($("#mini-canvas"), { blink: true });
+    miniSprite.startIdle();
+    renderChips();
+  }
+
+  /* ============================================================
+     ОКНО (mac-кнопки)
+     ============================================================ */
+  $("#btn-close").addEventListener("click", () => cc.win.close());
+  $("#btn-min").addEventListener("click", () => cc.win.minimize());
+  $("#btn-mini").addEventListener("click", () => cc.win.minimize());
+  $("#btn-max").addEventListener("click", () => cc.win.toggleMax());
+
+  /* ============================================================
+     ВКЛАДКИ + СТАТИСТИКА (реальные локальные данные)
+     ============================================================ */
+  $$("#tabs .tab").forEach((t) =>
+    t.addEventListener("click", () => {
+      $$("#tabs .tab").forEach((x) => x.classList.toggle("active", x === t));
+      const isModels = t.dataset.tab === "models";
+      $("#pane-overview").classList.toggle("hidden", isModels);
+      $("#pane-models").classList.toggle("hidden", !isModels);
+    })
+  );
+
+  const PEAK_LABELS = ["00–03", "03–07", "07–11", "11–14", "14–17", "17–21", "21–24"];
+
+  async function loadStats() {
+    try {
+      const s = await cc.stats.get();
+      $("#st-sessions").textContent = s.sessions;
+      $("#st-messages").textContent = s.messages;
+      $("#st-tokens").textContent = s.tokens;
+      $("#st-days").textContent = s.days;
+      $("#st-fav").textContent = (s.favorite || "—").length > 26 ? s.favorite.slice(0, 24) + "…" : s.favorite || "—";
+      // пик: самая «горячая» из 7 полос
+      const rowSum = Array(7).fill(0);
+      (s.heat || []).forEach((col) => col.forEach((v, r) => { rowSum[r] += v; }));
+      let bi = 0;
+      rowSum.forEach((v, i) => { if (v > rowSum[bi]) bi = i; });
+      $("#st-peak").textContent = rowSum[bi] ? PEAK_LABELS[bi] + " ч" : "—";
+      // heatmap: 24 дня (столбцы) × 7 полос (строки)
+      let html = "";
+      for (let col = 0; col < 24; col++) {
+        for (let r = 0; r < 7; r++) {
+          const v = (s.heat && s.heat[col] ? s.heat[col][r] : 0) || 0;
+          const lv = v >= 10 ? 3 : v >= 4 ? 2 : v >= 1 ? 1 : 0;
+          html += `<i class="hm${lv ? " hm-" + lv : ""}"></i>`;
+        }
+      }
+      $("#heatmap").innerHTML = html;
+    } catch { /* статистика не критична */ }
+  }
+
+  /* ============================================================
+     МОДЕЛИ: три провайдера (Arena-агенты / dahl / OpenRouter free)
+     ============================================================ */
+  const modelsCache = { arena: [], dahl: [], openrouter: [] };
+  const modelsNote = {}; // провайдер -> текст ошибки/подсказки
+  const GROUPS = [
+    { id: "arena", label: "Arena AI · агенты сессии", dot: "g-arena" },
+    { id: "dahl", label: "dahl.global", dot: "g-dahl" },
+    { id: "openrouter", label: "OpenRouter · только free", dot: "g-or" },
+  ];
+
+  function modelTag(m, provider) {
+    if (provider === "arena") return "agent";
+    if (provider === "dahl") return "dahl";
+    return "free";
+  }
+
+  function modelRowHTML(m, provider, label, dot) {
+    const sel = window.CC && window.CC.Chat.state.modelId === m.id && window.CC.Chat.state.providerId === provider;
+    return `<div class="model-row${sel ? " active" : ""}" data-provider="${provider}" data-id="${m.id}">
+      <span class="m-dot ${dot}"></span>
+      <div class="m-info"><b>${escHtml(m.name)}</b><small>${label}</small></div>
+      <span class="m-tag${m.free ? " free" : ""}">${modelTag(m, provider)}</span>
+      <button class="glass-btn pill-btn sm m-pick">${sel ? "выбрана" : "Выбрать"}</button>
+    </div>`;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function renderModelLists(filter = "") {
+    const f = filter.trim().toLowerCase();
+    let html = "";
+    for (const g of GROUPS) {
+      const list = modelsCache[g.id].filter(
+        (m) => !f || m.name.toLowerCase().includes(f) || g.label.toLowerCase().includes(f)
+      );
+      html += `<div class="models-group">${escHtml(g.label)}</div>`;
+      if (modelsNote[g.id]) {
+        html += `<div class="models-note">⚠ ${escHtml(modelsNote[g.id])}</div>`;
+      }
+      html += list.length
+        ? list.map((m) => modelRowHTML(m, g.id, g.label, g.dot)).join("")
+        : (modelsNote[g.id] ? "" : `<div class="empty">Модели не загружены</div>`);
+    }
+    $("#models-list").innerHTML = html || `<div class="empty">Ничего не найдено</div>`;
+    $("#pop-models").innerHTML = html || `<div class="empty">Ничего не найдено</div>`;
+  }
+
+  async function loadModels() {
+    for (const g of GROUPS) {
+      modelsNote[g.id] = null;
+      const r = await cc.providers.listModels(g.id);
+      if (r.ok) {
+        modelsCache[g.id] = r.models || [];
+      } else {
+        modelsCache[g.id] = [];
+        modelsNote[g.id] = r.error || "не удалось загрузить";
+      }
+    }
+    renderModelLists($("#model-search").value);
+  }
+  $("#btn-models-refresh").addEventListener("click", async () => {
+    toast("Обновляю список моделей…");
+    await loadModels();
+    toast("Список моделей обновлён");
+  });
+  $("#model-search").addEventListener("input", (e) => renderModelLists(e.target.value));
+  $("#pop-model-search").addEventListener("input", (e) => {
+    const f = e.target.value.toLowerCase();
+    const rows = $$("#pop-models .model-row").filter((r) => {
+      const name = r.querySelector(".m-info b").textContent.toLowerCase();
+      return !f || name.includes(f);
+    });
+    $$("#pop-models .model-row, #pop-models .models-group, #pop-models .models-note, #pop-models .empty").forEach((el) => {
+      el.style.display = el.classList.contains("model-row") ? (rows.includes(el) ? "" : "none") : "";
+    });
+  });
+
+  /** Выбор модели (клик по строке в любом списке). */
+  function selectModel(provider, id) {
+    const st = window.CC.Chat.state;
+    st.providerId = provider;
+    st.modelId = id;
+    st.modelName = id;
+    applyModelBadge(provider, id);
+    cc.settings.save({ model: { provider, id } });
+    renderModelLists($("#model-search").value);
+    toast("Модель: " + id);
+  }
+  function applyModelBadge(provider, id) {
+    $("#model-name").textContent = id.length > 34 ? id.slice(0, 32) + "…" : id;
+    $("#model-tier").textContent =
+      provider === "arena" ? "Arena" : provider === "dahl" ? "dahl" : "free";
+  }
+  document.addEventListener("click", (e) => {
+    const row = e.target.closest(".model-row");
+    if (row) selectModel(row.dataset.provider, row.dataset.id);
+  });
+
+  /* ============================================================
+     СЕССИЯ ARENA (отдельная кнопочка, 3 экземпляра)
+     ============================================================ */
+  let arenaBusy = false;
+  function refreshArena(btn) {
+    if (arenaBusy) return;
+    arenaBusy = true;
+    $("#sess-ico").classList.add("spinning");
+    btn.classList.add("is-busy");
+    $("#sess-state").textContent = "обновление…";
+    cc.providers.refreshArena().then((r) => {
+      $("#sess-ico").classList.remove("spinning");
+      btn.classList.remove("is-busy");
+      arenaBusy = false;
+      if (r.ok) {
+        $("#sess-state").textContent = "активна ✓";
+        toast("Сессия Arena обновлена — загружено агентов: " + (r.agents ? r.agents.length : 0));
+        // обновляем список агентов
+        cc.providers.listModels("arena").then((res) => {
+          if (res.ok) { modelsCache.arena = res.models; renderModelLists($("#model-search").value); }
+        });
+      } else {
+        $("#sess-state").textContent = "нет";
+        showError(r.error || "Не удалось обновить сессию Arena", true, () => refreshArena($("#btn-session")));
+      }
+    });
+  }
+  function checkArenaSilent() {
+    cc.providers.refreshArena().then((r) => {
+      $("#sess-state").textContent = r.ok ? "активна" : "нет куки";
+      if (r.ok) modelsCache.arena = r.agents || [];
+      renderModelLists($("#model-search").value);
+    });
+  }
+  ["#btn-session", "#btn-session-2", "#btn-session-3"].forEach((s) =>
+    $(s).addEventListener("click", (e) => refreshArena(e.currentTarget))
+  );
+
+  /* ============================================================
+     КНОПКА МОДЕЛИ (поповер) + ИСТОРИЯ
+     ============================================================ */
+  $("#btn-model").addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (pops.model.classList.contains("hidden")) openPop("model");
+    else closePops();
+  });
+  $("#btn-history").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const list = $("#pop-history-list");
+    list.innerHTML = `<div class="empty">Загрузка…</div>`;
+    if (pops.history.classList.contains("hidden")) openPop("history");
+    const chats = await cc.chat.list();
+    let html = `<div class="history-new"><button class="glass-btn pill-btn" id="hist-new">＋ Новый чат</button></div>`;
+    html += chats.length
+      ? chats.map((c) => `<div class="history-row" data-id="${c.id}" title="${escHtml(c.model)}">
+          <div class="m-info"><b>${escHtml(c.title)}</b><small>${escHtml(c.model)} · ${c.count} сообщ. · ${new Date(c.updatedAt).toLocaleDateString()}</small></div>
+        </div>`).join("")
+      : `<div class="empty">Пока нет чатов — начни первый</div>`;
+    list.innerHTML = html;
+    $("#hist-new").addEventListener("click", () => {
+      closePops();
+      window.CC.Chat.newChat();
+    });
+    $$("#pop-history-list .history-row").forEach((r) =>
+      r.addEventListener("click", () => {
+        closePops();
+        window.CC.Chat.loadChat(r.dataset.id);
+      })
+    );
+  });
+
+  /* ============================================================
+     НАСТРОЙКИ (ключи, лимит, маскот, выход)
+     ============================================================ */
+  $("#btn-settings").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (pops.settings.classList.contains("hidden")) {
+      const s = await cc.settings.get();
+      $("#key-or").value = s.keys.openrouter || "";
+      $("#key-dahl").value = s.keys.dahl || "";
+      $("#key-arena").value = s.keys.arenaCookie || "";
+      $("#set-arena-limit").value = s.arenaLimit;
+      $("#set-mascot").checked = !!s.showMascotOnDone;
+      openPop("settings");
+    } else closePops();
+  });
+  $("#btn-save").addEventListener("click", async () => {
+    await cc.settings.save({
+      keys: {
+        openrouter: $("#key-or").value.trim(),
+        dahl: $("#key-dahl").value.trim(),
+        arenaCookie: $("#key-arena").value.trim(),
+      },
+      arenaLimit: Math.max(4, Number($("#set-arena-limit").value) || 30),
+      showMascotOnDone: $("#set-mascot").checked,
+    });
+    closePops();
+    toast("Настройки сохранены (только на этом ПК)");
+    checkArenaSilent();
+  });
+  $("#btn-logout").addEventListener("click", async () => {
+    await cc.auth.logout();
+    location.reload();
+  });
+
+  /* What's new */
+  $("#btn-whatsnew").addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (pops.whats.classList.contains("hidden")) openPop("whats");
+    else closePops();
+  });
+
+  /* ============================================================
+     ДРОУЕР: ФАЙЛЫ / ТЕРМИНАЛ
+     ============================================================ */
+  const drawer = $("#drawer");
+  function openDrawer(pane) {
+    drawer.classList.remove("hidden");
+    $("#pane-files").classList.toggle("hidden", pane !== "files");
+    $("#pane-term").classList.toggle("hidden", pane !== "term");
+    $("#dt-files").classList.toggle("active", pane === "files");
+    $("#dt-term").classList.toggle("active", pane === "term");
+    if (pane === "files" && !Files.dir) Files.loadDir();
+  }
+  $("#btn-files").addEventListener("click", () => openDrawer("files"));
+  $("#btn-term").addEventListener("click", () => openDrawer("term"));
+  $("#dt-files").addEventListener("click", () => openDrawer("files"));
+  $("#dt-term").addEventListener("click", () => openDrawer("term"));
+  $("#dt-close").addEventListener("click", () => drawer.classList.add("hidden"));
+
+  /* ---------- Файлы ---------- */
+  const Files = {
+    dir: null,
+    selectedFile: null,
+
+    async loadDir(p) {
+      const r = await cc.files.list(p || undefined);
+      if (!r.ok) { toast(r.error || "Не удалось открыть папку"); return; }
+      this.dir = r.path;
+      $("#files-path").value = r.path;
+      const listEl = $("#files-list");
+      listEl.innerHTML = r.parent
+        ? `<button class="file-item dir" data-name=".."><span class="fi-ico">📂</span>..</button>`
+        : "";
+      listEl.innerHTML += r.items.length
+        ? r.items.map((it) => `<button class="file-item${it.dir ? " dir" : ""}" data-name="${escHtml(it.name)}">
+            <span class="fi-ico">${it.dir ? "📂" : "📄"}</span>${escHtml(it.name)}
+            ${it.dir ? "" : `<span class="fi-size">${fmtSize(it.size)}</span>`}</button>`).join("")
+        : `<div class="empty">Пустая папка</div>`;
+      $("#files-preview").textContent = "";
+      $("#files-preview-name").textContent = "Выбери файл";
+      this.selectedFile = null;
+
+      $$("#files-list .file-item").forEach((b) =>
+        b.addEventListener("click", () => this.onItem(b.dataset.name))
+      );
+    },
+
+    join(name) {
+      return name === ".." ? this.dir.replace(/[^\\]+[\\/]$/, "") || this.dir : this.dir + "\\" + name;
+    },
+
+    async onItem(name) {
+      const full = this.join(name);
+      const r = await cc.files.list(full);
+      if (r.ok) { this.loadDir(full); return; }
+      // это файл
+      const fr = await cc.files.read(full);
+      if (!fr.ok) {
+        toast(fr.error || "Не удалось прочитать файл");
+        return;
+      }
+      this.selectedFile = full;
+      $("#files-preview-name").textContent = full.split("\\").pop();
+      const prev = $("#files-preview");
+      prev.textContent = fr.content;
+      $("#files-preview-name").textContent = full.split("\\").pop() + "  (редактируй и нажми «Сохранить»)";
+    },
+  };
+  function fmtSize(n) {
+    if (n > 1048576) return (n / 1048576).toFixed(1) + " МБ";
+    if (n > 1024) return (n / 1024).toFixed(1) + " КБ";
+    return n + " Б";
+  }
+  $("#files-preview").setAttribute("contenteditable", "true");
+  $("#files-preview").setAttribute("spellcheck", "false");
+  $("#files-up").addEventListener("click", () => Files.loadDir($("#files-path").value.replace(/[^\\]+[\\/]$/, "") || undefined));
+  $("#files-pick").addEventListener("click", async () => {
+    const r = await cc.files.pick();
+    if (r.ok) Files.loadDir(r.path);
+  });
+  $("#files-reveal").addEventListener("click", () => cc.files.reveal(Files.dir));
+  $("#files-openfile").addEventListener("click", () => {
+    if (Files.selectedFile) cc.files.open(Files.selectedFile);
+    else toast("Сначала выбери файл");
+  });
+  $("#files-save").addEventListener("click", async () => {
+    if (!Files.selectedFile) { toast("Нет открытого файла"); return; }
+    const ok = await confirm(
+      "Сохранить файл?",
+      "Записать изменения в:\n\n" + Files.selectedFile,
+      "Сохранить"
+    );
+    if (!ok) return;
+    const r = await cc.files.write(Files.selectedFile, $("#files-preview").textContent);
+    toast(r.ok ? "Файл сохранён" : "Ошибка: " + r.error);
+  });
+
+  /* ---------- Терминал ---------- */
+  const Term = {
+    runId: null,
+    running: false,
+    append(text) {
+      const out = $("#term-out");
+      out.textContent += text;
+      out.scrollTop = out.scrollHeight;
+    },
+    async runCmd() {
+      const cmd = $("#term-cmd").value.trim();
+      if (!cmd || this.running) return;
+      const shell = $("#term-shell").value;
+      const cwd = $("#term-cwd").value.trim();
+      const ok = await confirm(
+        "Запустить команду в " + (shell === "cmd" ? "CMD" : "PowerShell") + "?",
+        "Команда: " + cmd + (cwd ? "\nПапка: " + cwd : ""),
+        "Запустить"
+      );
+      if (!ok) return;
+      $("#term-cmd").value = "";
+      this.append("\n❯ " + cmd + "\n");
+      const r = await cc.terminal.run({ command: cmd, shell, cwd: cwd || undefined });
+      if (!r.ok) { this.append("Ошибка запуска: " + r.error + "\n"); return; }
+      this.runId = r.runId;
+      this.running = true;
+    },
+  };
+  $("#term-run").addEventListener("click", () => Term.runCmd());
+  $("#term-cmd").addEventListener("keydown", (e) => { if (e.key === "Enter") Term.runCmd(); });
+  $("#term-stop").addEventListener("click", () => { if (Term.runId) cc.terminal.kill(Term.runId); });
+  $("#term-clear").addEventListener("click", () => { $("#term-out").textContent = ""; });
+  cc.terminal.onOut(({ runId, text }) => { if (runId === Term.runId) Term.append(text); });
+  cc.terminal.onDone(({ runId, code, error }) => {
+    if (runId !== Term.runId) return;
+    Term.running = false;
+    Term.runId = null;
+    Term.append(error ? "Ошибка: " + error + "\n" : "\n[завершено, код: " + code + "]\n");
+  });
+
+  /* ============================================================
+     ПАПКИ-ЧИПЫ (проектные папки)
+     ============================================================ */
+  let chips = [];
+  try { chips = JSON.parse(localStorage.getItem("cc.chips") || "[]"); } catch { chips = []; }
+
+  function renderChips() {
+    const el = $("#chips");
+    el.innerHTML = `<button class="chip${!chips.length ? " active" : ""}" data-path="">🖥 Local</button>` +
+      chips.map((c, i) => `<button class="chip" data-path="${escHtml(c.path)}" data-i="${i}">📁 ${escHtml(c.label)}</button>`).join("") +
+      `<button class="chip" id="chip-add" title="Добавить папку проекта">＋</button>`;
+    $$("#chips .chip").forEach((b) =>
+      b.addEventListener("click", () => {
+        if (b.id === "chip-add") { addChip(); return; }
+        $$("#chips .chip").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        const p = b.dataset.path;
+        $("#term-cwd").value = p;
+        if (p) Files.loadDir(p);
+      })
+    );
+  }
+  async function addChip() {
+    const r = await cc.files.pick();
+    if (!r.ok) return;
+    chips.push({ label: r.path.split("\\").pop() || r.path, path: r.path });
+    localStorage.setItem("cc.chips", JSON.stringify(chips));
+    renderChips();
+    toast("Папка добавлена: " + r.path);
+  }
+  $("#btn-plus").addEventListener("click", addChip);
+
+  /* ============================================================
+     МАСКОТ (мини в строке папок) + ЧИМ
+     ============================================================ */
+  let miniSprite = null;
+  window.addEventListener("load", () => {
+    const c = $("#mini-canvas");
+    if (c && !miniSprite) {
+      miniSprite = new window.CharonSprite(c, { blink: true });
+      miniSprite.startIdle();
+    }
+    c && c.addEventListener("click", () => {
+      // призвать маскота (оверлей + чим) — то же, что при завершении задачи
+      cc.mascot.taskDone();
+    });
+  });
+  // main показал оверлей → играем тихий чим в главном окне
+  cc.mascot.onWave(() => {
+    const chime = $("#chime");
+    try { chime.currentTime = 0; const p = chime.play(); if (p && p.catch) p.catch(() => {}); } catch { /* нет звука */ }
+  });
+
+  /* ============================================================
+     ПРОЧЕЕ
+     ============================================================ */
+  $("#btn-notice-x").addEventListener("click", () => {
+    const n = $("#notice");
+    n.classList.add("out");
+    setTimeout(() => n.classList.add("hidden"), 320);
+  });
+
+  /* ============================================================
+     СТАРТ
+     ============================================================ */
+  window.CC = window.CC || {};
+  Object.assign(window.CC, { toast, confirm, showError, updateModelBadge: applyModelBadge, checkArenaSilent });
+
+  (async () => {
+    const st = await cc.auth.status();
+    if (st && st.username) {
+      await enterApp(st.username);
+    } else {
+      $("#auth-screen").classList.remove("hidden");
+      // маскот на экране входа тоже живой
+      const as = new window.CharonSprite($("#auth-mascot"), { blink: true });
+      as.startIdle();
+      const t = setTimeout(() => as.wave(2), 900);
+    }
+  })();
+})();

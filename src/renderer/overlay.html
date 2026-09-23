@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Charon Overlay</title>
+  <style>
+    /* Прозрачное окно-оверлей 150×150 в правом нижнем углу */
+    html, body { margin: 0; padding: 0; width: 150px; height: 150px; overflow: hidden; background: transparent; }
+    #tip {
+      position: absolute; right: 12px; bottom: 96px;
+      max-width: 210px;
+      font: 500 11.5px/1.4 "Segoe UI", system-ui, sans-serif;
+      color: #e9ecf3;
+      background: linear-gradient(160deg, rgba(30,33,41,.92), rgba(20,22,28,.92));
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 10px;
+      padding: 7px 11px;
+      opacity: 0; transform: translateY(4px);
+      transition: opacity .3s .25s, transform .3s .25s;
+      pointer-events: none;
+    }
+    #tip.show { opacity: 1; transform: translateY(0); }
+    #slot {
+      position: absolute; right: 10px; bottom: 8px;
+      width: 92px; height: 72px;
+      background: none; border: none; padding: 0;
+      cursor: pointer;
+      transform: translate(150%, 170%);
+    }
+    #slot::before {
+      content: ""; position: absolute; inset: -8px;
+      background: radial-gradient(closest-side, rgba(229,113,75,.28), transparent 72%);
+      filter: blur(7px);
+    }
+    #slot canvas {
+      width: 78px; height: 45px; display: block; margin: 13px auto 0;
+      image-rendering: pixelated; position: relative; z-index: 1;
+    }
+    #slot.pop { animation: pop .62s cubic-bezier(.3,1.35,.45,1) forwards; }
+    @keyframes pop {
+      0%   { transform: translate(150%, 170%); }
+      62%  { transform: translate(-8%, -10%); }
+      82%  { transform: translate(3%, 3%); }
+      100% { transform: translate(0, 0); }
+    }
+    #slot.bob canvas { animation: bob 1.7s steps(2) infinite; }
+    @keyframes bob { 50% { transform: translateY(1px); } }
+  </style>
+</head>
+<body>
+  <div id="tip">Задача выполнена — кликни, чтобы вернуться</div>
+  <button id="slot" title="Charon: вернуться в приложение">
+    <canvas id="c" width="78" height="45"></canvas>
+  </button>
+  <script src="charon.js"></script>
+  <script src="overlay.js"></script>
+</body>
+</html>

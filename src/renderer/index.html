@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Charon Code</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ================= ЭКРАН ВХОДА / РЕГИСТРАЦИИ ================= -->
+  <div id="auth-screen" class="auth-screen hidden">
+    <div class="auth-card glass">
+      <canvas id="auth-mascot" width="78" height="45"></canvas>
+      <h1 class="auth-title">CHARON CODE</h1>
+      <p class="auth-sub">Десктопный AI-проводник · Arena AI · dahl.global · OpenRouter</p>
+
+      <div class="auth-tabs">
+        <button class="at active" id="tab-login">Вход</button>
+        <button class="at" id="tab-reg">Регистрация</button>
+      </div>
+
+      <label class="f-label">Имя пользователя</label>
+      <input class="f-input" id="auth-user" placeholder="например: striver" maxlength="24" autocomplete="off" spellcheck="false">
+
+      <label class="f-label">Пароль</label>
+      <input class="f-input" id="auth-pass" type="password" placeholder="минимум 4 символа">
+
+      <label class="f-label hidden" id="pass2-wrap">Пароль ещё раз</label>
+      <input class="f-input hidden" id="auth-pass2" type="password" placeholder="повтори пароль">
+
+      <button class="glass-btn primary big" id="auth-submit">Войти</button>
+      <div class="auth-err" id="auth-err"></div>
+      <p class="auth-note">Аккаунт создаётся <b>только на этом ПК</b> (локальная база в AppData).
+      Имя и пароль никуда не отправляются — никакого облака и серверов.</p>
+    </div>
+  </div>
+
+  <!-- ================= ГЛАВНОЕ ПРИЛОЖЕНИЕ ================= -->
+  <div id="app-screen" class="app-screen hidden">
+
+    <section class="app-window" id="app-window">
+
+      <!-- ТИТЛБАР -->
+      <header class="titlebar">
+        <div class="traffic">
+          <button class="tl tl-red" id="btn-close" title="Закрыть"><span>×</span></button>
+          <button class="tl tl-yellow" id="btn-min" title="Свернуть"><span>−</span></button>
+          <button class="tl tl-green" id="btn-max" title="Развернуть / полный экран"><span>+</span></button>
+        </div>
+
+        <div class="win-tools">
+          <button class="icon-btn glass-btn" id="btn-mini" title="Свернуть">◻</button>
+          <button class="icon-btn glass-btn" id="btn-back" title="Назад (по истории сообщений)">←</button>
+          <button class="icon-btn glass-btn" id="btn-fwd" title="Вперёд (по истории сообщений)">→</button>
+        </div>
+
+        <div class="win-tools-right">
+          <button class="glass-btn pill-btn" id="btn-files" title="Файлы проекта">📁 <span class="btn-label">Файлы</span></button>
+          <button class="glass-btn pill-btn" id="btn-term" title="Терминал (CMD / PowerShell)">❯_ <span class="btn-label">Терминал</span></button>
+        </div>
+
+        <div class="titlebar-right">
+          <button class="glass-btn pill-btn session-btn" id="btn-session" title="Проверить/обновить сессию Arena AI (куку)">
+            <span class="sess-ico" id="sess-ico">↻</span>
+            <span class="btn-label">Arena:</span><b id="sess-state">…</b>
+          </button>
+          <button class="link-btn" id="btn-whatsnew">What's new</button>
+        </div>
+      </header>
+
+      <!-- РАБОЧАЯ ОБЛАСТЬ -->
+      <div class="win-body">
+
+        <!-- Экран приветствия: карточка Overview / Models -->
+        <div class="welcome" id="welcome">
+          <h1 class="greeting">
+            <svg class="spark" viewBox="0 0 24 24" aria-hidden="true">
+              <g fill="currentColor">
+                <rect x="11.2" y="1" width="1.6" height="22" rx=".8"/>
+                <rect x="11.2" y="1" width="1.6" height="22" rx=".8" transform="rotate(45 12 12)"/>
+                <rect x="11.2" y="1" width="1.6" height="22" rx=".8" transform="rotate(90 12 12)"/>
+                <rect x="11.2" y="1" width="1.6" height="22" rx=".8" transform="rotate(135 12 12)"/>
+              </g>
+            </svg>
+            What's up next, <span id="greet-name" class="greet-name">…</span>?
+          </h1>
+
+          <div class="card" id="main-card">
+            <div class="card-top">
+              <div class="tabs" id="tabs">
+                <button class="tab active" data-tab="overview">Overview</button>
+                <button class="tab" data-tab="models">Models</button>
+              </div>
+            </div>
+
+            <!-- Overview: реальная статистика по твоим локальным чатам -->
+            <div class="pane" id="pane-overview">
+              <div class="stats">
+                <div class="stat"><span>Sessions</span><b id="st-sessions">0</b></div>
+                <div class="stat"><span>Messages</span><b id="st-messages">0</b></div>
+                <div class="stat"><span>Total tokens</span><b id="st-tokens">0</b></div>
+                <div class="stat"><span>Active days</span><b id="st-days">0</b></div>
+                <div class="stat"><span>Peak time</span><b id="st-peak">—</b></div>
+                <div class="stat"><span>Favorite model</span><b id="st-fav">—</b></div>
+              </div>
+              <div class="heatmap" id="heatmap"></div>
+              <div class="card-foot">Статистика считается из твоих локальных чатов. 7 полос = 7 периодов суток, 24 столбца = последние 24 дня.</div>
+            </div>
+
+            <!-- Models: все провайдеры, выбор в клик -->
+            <div class="pane hidden" id="pane-models">
+              <div class="models-search glass">
+                <input id="model-search" placeholder="Поиск модели… (Claude, GPT, Gemini, DeepSeek, MiniMax, GLM…)">
+              </div>
+              <div class="models-list" id="models-list">
+                <div class="empty">Загрузка списка моделей…</div>
+              </div>
+              <div class="models-foot">
+                <button class="glass-btn pill-btn" id="btn-models-refresh">↻ Обновить список</button>
+                <button class="glass-btn pill-btn session-btn" id="btn-session-2">↻ Обновить сессию Arena</button>
+                <span class="models-hint">Arena AI — агенты сессии · dahl.global · OpenRouter (только free)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ЧАТ -->
+        <div class="chat hidden" id="chat">
+          <div class="messages" id="messages"></div>
+        </div>
+
+        <!-- Статусная строка движка -->
+        <div class="stream-status hidden" id="stream-status"></div>
+      </div>
+
+      <!-- ДРОУЕР: файлы / терминал -->
+      <div class="drawer hidden" id="drawer">
+        <div class="drawer-head">
+          <button class="drawer-tab glass-btn" id="dt-files" title="Файлы">📁 Файлы</button>
+          <button class="drawer-tab glass-btn" id="dt-term" title="Терминал">❯_ Терминал</button>
+          <div class="flex-sp"></div>
+          <button class="icon-btn glass-btn" id="dt-close" title="Скрыть панель">×</button>
+        </div>
+
+        <!-- Панель файлов -->
+        <div class="drawer-pane" id="pane-files">
+          <div class="files-bar">
+            <input class="f-input path-input" id="files-path" readonly title="Текущий каталог (выбери другой кнопкой)">
+            <button class="glass-btn pill-btn" id="files-up" title="Наверх">↑</button>
+            <button class="glass-btn pill-btn" id="files-pick" title="Выбрать папку">Выбрать…</button>
+            <button class="glass-btn pill-btn" id="files-reveal" title="Показать в проводнике">Проводник</button>
+          </div>
+          <div class="files-split">
+            <div class="files-list" id="files-list"></div>
+            <div class="files-preview-wrap">
+              <div class="files-preview-head" id="files-preview-name">Выбери файл</div>
+              <pre class="files-preview" id="files-preview"></pre>
+              <div class="files-actions">
+                <button class="glass-btn pill-btn" id="files-save">💾 Сохранить (с подтверждением)</button>
+                <button class="glass-btn pill-btn" id="files-openfile">Открыть в приложении</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Панель терминала -->
+        <div class="drawer-pane hidden" id="pane-term">
+          <div class="term-bar">
+            <select class="f-input term-shell" id="term-shell" title="Оболочка">
+              <option value="cmd">CMD</option>
+              <option value="powershell">PowerShell</option>
+            </select>
+            <input class="f-input term-cwd" id="term-cwd" placeholder="Рабочая папка (по умолчанию — домашняя)">
+          </div>
+          <pre class="term-out" id="term-out"></pre>
+          <div class="term-input-row">
+            <span class="term-ps">❯</span>
+            <input class="f-input term-cmd" id="term-cmd" placeholder="Команда: npm run build, dir, Get-ChildItem …" spellcheck="false">
+            <button class="glass-btn pill-btn primary" id="term-run">Запустить</button>
+            <button class="glass-btn pill-btn" id="term-stop">Стоп</button>
+            <button class="glass-btn pill-btn" id="term-clear">Очистить</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ЗОНА ВВОДА -->
+      <footer class="input-zone">
+        <div class="chips-row">
+          <div class="chips" id="chips">
+            <button class="chip active" id="chip-home">🖥 Local</button>
+          </div>
+          <canvas class="charon-mini" id="mini-canvas" width="52" height="30" title="Charon — призвать маскота"></canvas>
+        </div>
+
+        <div class="notice glass" id="notice">
+          <span class="n-ico">✦</span>
+          <span class="n-text">Движок «1 нажатие = 1 ответ»: если нейросеть тормозит или рвёт соединение — Charon сам переподключается (до 10 попыток).</span>
+          <button class="icon-btn" id="btn-notice-x" title="Скрыть">×</button>
+        </div>
+
+        <div class="input-bar glass">
+          <input id="chat-input" placeholder="Спроси что угодно… (Enter — отправить)" autocomplete="off" spellcheck="false">
+          <button class="send-btn glass-btn hidden" id="btn-stop" title="Остановить">■</button>
+          <button class="send-btn glass-btn" id="btn-send" title="Отправить (Enter)">
+            <svg viewBox="0 0 24 24" width="16" height="16">
+              <path d="M5 12h12M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none"
+                    stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="meta-row">
+          <button class="icon-btn glass-btn" id="btn-plus" title="Прикрепить папку проекта">+</button>
+          <button class="glass-btn pill-btn sm" id="btn-history" title="История чатов">🕘 История</button>
+          <div class="flex-sp"></div>
+          <button class="glass-btn pill-btn model-badge" id="btn-model">
+            <span id="model-name">…</span><span class="tier" id="model-tier">—</span>
+          </button>
+          <button class="icon-btn glass-btn round" id="btn-settings" title="Настройки: ключи API, кука Arena, лимит, маскот">⚙</button>
+        </div>
+      </footer>
+    </section>
+
+    <!-- ПОПОВЕР: выбор модели -->
+    <div class="pop glass hidden" id="pop-model">
+      <div class="pop-head"><b>Модели нейросетей</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <input class="pop-search" id="pop-model-search" placeholder="Поиск…">
+      <div class="pop-models" id="pop-models"></div>
+    </div>
+
+    <!-- ПОПОВЕР: история чатов -->
+    <div class="pop glass hidden" id="pop-history">
+      <div class="pop-head"><b>История чатов</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <div class="pop-models" id="pop-history-list"></div>
+    </div>
+
+    <!-- ПОПОВЕР: настройки -->
+    <div class="pop glass hidden" id="pop-settings">
+      <div class="pop-head"><b>Настройки</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+
+      <label class="f-label">OpenRouter · API key (бесплатные модели)</label>
+      <input class="f-input" id="key-or" type="password" placeholder="sk-or-v1-…" spellcheck="false">
+
+      <label class="f-label">dahl.global · API key</label>
+      <input class="f-input" id="key-dahl" type="password" placeholder="Bearer …" spellcheck="false">
+
+      <label class="f-label">Arena AI · сессионная кука</label>
+      <textarea class="f-input" id="key-arena" rows="2" placeholder="F12 → Network → lmarena.ai → заголовок Cookie" spellcheck="false"></textarea>
+
+      <label class="f-label">Лимит сообщений на чат в Arena</label>
+      <input class="f-input" id="set-arena-limit" type="number" min="4" max="500" placeholder="30">
+      <p class="f-hint small">Достигли лимита — Charon сам создаст новый чат, перенесёт историю, проверит его и удалит старый.</p>
+
+      <label class="check-row"><input type="checkbox" id="set-mascot"> Маскот + чим при завершении задачи</label>
+
+      <div class="pop-actions">
+        <button class="glass-btn pill-btn" id="btn-session-3">↻ Обновить сессию Arena</button>
+        <button class="glass-btn pill-btn" id="btn-logout">Выйти из аккаунта</button>
+        <button class="glass-btn pill-btn primary" id="btn-save">Сохранить</button>
+      </div>
+      <p class="f-hint">Все ключи хранятся <b>только на этом ПК</b> (AppData\Roaming\Charon Code). Отправляться они могут только к выбранным провайдерам.</p>
+    </div>
+
+    <!-- ПОПОВЕР: What's new -->
+    <div class="pop glass hidden" id="pop-whats">
+      <div class="pop-head"><b>What's new · 1.0.0</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <ul class="whats-list">
+        <li><b>Движок «1 нажатие = 1 ответ»</b> — exponential backoff, до 10 повторов, переподключение при обрыве.</li>
+        <li><b>Авто-миграция чатов</b> — лимит достигнут: новый чат → копия истории → проверка → удаление старого.</li>
+        <li><b>Arena AI по сессии</b> — список AI-агентов Арены, реальные чаты, кнопка «Обновить сессию».</li>
+        <li><b>Файлы и терминал</b> — доступ к проекту, CMD/PowerShell с подтверждением.</li>
+        <li><b>Локальная регистрация</b> — аккаунт и данные только на твоём ПК.</li>
+        <li><b>Оверлей-маскот</b> — вылезает из угла, машет, играет тихий чим. Клик — возврат.</li>
+      </ul>
+    </div>
+
+    <!-- МОДАЛКА: подтверждение (запись файла / запуск команды) -->
+    <div class="modal hidden" id="modal-confirm">
+      <div class="modal-card glass">
+        <h3 id="confirm-title">Подтверждение</h3>
+        <p class="modal-detail" id="confirm-detail"></p>
+        <div class="modal-actions">
+          <button class="glass-btn pill-btn" id="confirm-no">Отмена</button>
+          <button class="glass-btn pill-btn primary" id="confirm-yes">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- МОДАЛКА: диагностика ошибки -->
+    <div class="modal hidden" id="modal-error">
+      <div class="modal-card glass err-card">
+        <h3>⚠ Ошибка</h3>
+        <p class="modal-detail" id="err-text"></p>
+        <div class="modal-actions">
+          <button class="glass-btn pill-btn" id="err-close">Закрыть</button>
+          <button class="glass-btn pill-btn primary hidden" id="err-retry">Переподключиться</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Тосты -->
+    <div class="toasts" id="toasts"></div>
+  </div>
+
+  <!-- Чим завершения задачи (тихий, спокойный) -->
+  <audio id="chime" src="../../assets/chime.wav" preload="auto"></audio>
+
+  <script src="charon.js"></script>
+  <script src="chat.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>

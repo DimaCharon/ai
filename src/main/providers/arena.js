@@ -1,44 +1,53 @@
 /* ============================================================
-   arena.js — Arena AI (lmarena.ai) через сессионную куку
+   arena.js — Arena AI (arena.ai) через сессионную куку браузера
    ------------------------------------------------------------
    HOW IT WORKS
-   1. Пользователь копирует сессионную куку из браузера
-      (F12 → Network → любой запрос к lmarena.ai → заголовок
-      Cookie) и вставляет в Настройки → «Обновить сессию».
-   2. Приложение ходит на веб-эндпоинты АРЕНЫ от имени этой
-      сессии: смотрит список AI-агентов и ПРЕДЛАГАЕТ их в
-      селекторе моделей, создаёт РЕАЛЬНЫЕ чаты на сайте,
-      шлёт туда сообщения, ведёт счётчик лимита.
-   3. Когда чат наполнен до лимита — движок САМ создаёт новый
-      чат, копирует туда историю, проверяет, что новый чат
-      отвечает, и только потом удаляет старый (см. engine.js).
+   1. LMArena переехала: lmarena.ai теперь 301 → arena.ai.
+      Реальный сайт пользователя: https://arena.ai/agent.
+   2. Пользователь копирует сессионную куку из браузера:
+      arena.ai → F12 → Network → любой запрос → Request Headers
+      → строка «cookie:» → скопировать ВСЁ значение целиком
+      (важно: через Network, а не document.cookie — там нет
+      HttpOnly-кук, включая __cf_clearance Cloudflare).
+      Вставляет в Настройки (⚙) → «Сохранить» → «Обновить сессию».
+   3. Приложение ходит на веб-эндпоинты АРЕНЫ от имени этой сессии:
+      • GET  /api/me — проверка сессии (200 = активна, 401 = истекла);
+      • POST /nextjs-api/stream/create-chat — создать/продолжить
+        чат (ответ — SSE-стрим токенов).
+   4. Когда чат наполнен до лимита — движок САМ создаёт новый
+      чат, копирует туда историю, проверяет, что новый отвечает,
+      и только потом удаляет старый (см. engine.js).
 
-   ⚠️ КОНФИГУРАЦИЯ ЭНДПОИНТОВ
-   Arena не имеет публичного API — ниже пути её ВЕБ-эндпоинтов.
-   Если сайт изменит API, диагностическое окно укажет, какой
-   именно шаг сломался, и достаточно поправить константу
-   ARENA_CFG.endpoints (один блок).
+   ⚠️ ОГРАНИЧЕНИЯ (честно)
+   • Публичного API нет — это веб-эндпоинты фронтенда, сайт может
+     их поменять. Конфиг — в одном блоке ARENA_CFG.
+   • Сайт добавляет reCAPTCHA v2 на отправку сообщений. Сервер
+     проверяет АВТОРИЗАЦИЮ первой; если после валидной куки
+     придёт требование CAPTCHA — приложение честно скажет, что
+     без браузера это не обойти, и предложит другой провайдер.
    ============================================================ */
 "use strict";
 
+const crypto = require("crypto");
 const { Provider, ProviderError } = require("./base");
 const { parseSSE } = require("./sse");
 const store = require("../store");
 
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
 const ARENA_CFG = {
-  baseUrl: "https://lmarena.ai",
+  baseUrl: "https://arena.ai", // lmarena.ai → 301 сюда
   endpoints: {
-    home: "/",               // GET    — проверка сессии (редирект на логин = сессия истекла)
-    agents: "/api/agents",   // GET    — список AI-агентов/моделей Арены
-    chatNew: "/api/chat",    // POST   { model } → { chatId } — создать реальный чат
-    chatSend: "/api/chat/stream", // POST { chatId, model, history, message } → SSE-ответ
-    chatDel: "/api/chat",    // DELETE { chatId } — удалить старый чат
+    me: "/api/me",                          // GET  — проверка сессии
+    send: "/nextjs-api/stream/create-chat", // POST — создать/продолжить чат (SSE)
+    // догадки для списка агентов (если сайт отдаёт — подхватим):
+    agentsGuesses: ["/api/agents", "/api/models", "/api/v2/models"],
   },
-  // Если эндпоинт агентов недоступен — предлагаем этот список
-  // (реальные названия моделей Арены).
+  // Если список агентов недоступен — предлагаем известные фронт-модели.
   fallbackAgents: [
-    "Claude Opus 5", "Claude Sonnet 5", "GPT-5",
-    "Gemini 3 Pro", "DeepSeek V4", "Grok 4",
+    "GPT-5", "Claude Sonnet 5", "Claude Opus 5",
+    "Gemini 3 Pro", "Grok 4", "DeepSeek V4",
   ],
   timeoutMs: 25000,
 };
@@ -60,8 +69,8 @@ class Arena extends Provider {
     return {
       Cookie: this.cookie,
       "Content-Type": "application/json",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+      Accept: "application/json, text/event-stream",
+      "User-Agent": UA,
     };
   }
 
@@ -69,149 +78,186 @@ class Arena extends Provider {
   _agentCache = null; // { at, agents }
 
   /**
-   * Проверка сессии. Бросает ProviderError с русским текстом:
-   *  - no_cookie        — кука не введена
-   *  - session_expired  — кука истекла/недействительна
-   *  - network          — сеть недоступна
+   * Проверка сессии: GET /api/me.
+   *  200 + user → активна (возвращаем имя пользователя);
+   *  401        → кука недействительна/истекла;
+   *  403        → кука неполная (нет __cf_clearance и т.п.).
    */
   async check() {
     if (!this.cookie) {
       throw new ProviderError(
         "no_cookie",
-        "Нет сессии Arena AI. Откройте lmarena.ai в браузере, войдите, затем F12 → Network → любой запрос → скопируйте заголовок Cookie и вставьте его в Настройки (⚙) → «Обновить сессию»."
+        "Нет сессии Arena AI. Открой arena.ai в браузере (войди), затем F12 → Network → " +
+        "перезагрузи → любой запрос к arena.ai → Request Headers → скопируй ВСЁ значение " +
+        "строки «cookie:» и вставь в Настройки (⚙) → нажми «Сохранить» → «Обновить сессию»."
       );
     }
     let r;
     try {
-      r = await fetch(ARENA_CFG.baseUrl + ARENA_CFG.endpoints.home, {
-        headers: { Cookie: this.cookie }, // без Content-Type — простой GET
+      r = await fetch(ARENA_CFG.baseUrl + ARENA_CFG.endpoints.me, {
+        headers: { Cookie: this.cookie, Accept: "application/json", "User-Agent": UA },
         redirect: "manual",
         signal: AbortSignal.timeout(ARENA_CFG.timeoutMs),
       });
     } catch (e) {
-      throw new ProviderError("network", "Arena AI недоступна: " + String(e.message || e).slice(0, 120) + ". Проверь интернет и попробуй ещё раз.");
+      throw new ProviderError(
+        "network",
+        "Arena AI (arena.ai) недоступна из твоей сети: " + String(e.message || e).slice(0, 120) +
+        ". Проверь интернет/VPN и попробуй ещё раз."
+      );
     }
-    const loc = r.headers.get("location") || "";
-    if ([401, 403].includes(r.status) || (r.status >= 300 && r.status < 400 && /login|signin|auth/i.test(loc))) {
+    if (r.status === 401) {
       throw new ProviderError(
         "session_expired",
-        "Истекла сессия Arena AI: кука недействительна или закончилась. Открой lmarena.ai в браузере, войди заново и нажми «Обновить сессию» в Настройках."
+        "Сессия Arena AI недействительна (HTTP 401). Открой arena.ai в браузере, убедись, " +
+        "что ты вошёл, затем заново скопируй куку (F12 → Network → Request Headers → cookie) " +
+        "и нажми «Сохранить» → «Обновить сессию»."
+      );
+    }
+    if (r.status === 403) {
+      throw new ProviderError(
+        "session_expired",
+        "Arena вернула 403: кука, скорее всего, неполная (не хватает куки Cloudflare " +
+        "__cf_clearance). Копируй куку только через F12 → Network (не из document.cookie — " +
+        "там её нет), затем «Сохранить» → «Обновить сессию»."
+      );
+    }
+    if (r.status >= 300 && r.status < 400) {
+      const loc = r.headers.get("location") || "";
+      throw new ProviderError(
+        "session_expired",
+        "Arena уводит сессию на другую страницу (" + (loc || "редирект") + ") — кука истекла. " +
+        "Войди заново в браузере и скопируй куку ещё раз."
       );
     }
     if (r.status >= 500) throw new Error("Arena AI: сервер отвечает ошибкой " + r.status);
-    return { ok: true, status: r.status };
+
+    // 200 — достаём имя пользователя для статуса
+    let username = null;
+    try {
+      const j = await r.json();
+      username = (j.user && (j.user.username || j.user.name || j.user.email)) || null;
+    } catch { /* не критично */ }
+    return { ok: true, status: r.status, username };
   }
 
   /**
-   * Список AI-агентов Арены — приложение показывает их в
-   * селекторе моделей (группа «Arena AI · агенты»).
+   * Список AI-агентов/моделей Арены для селектора.
+   * 1) пробуем вероятные API-эндпоинты (если отдадут — используем);
+   * 2) иначе — известный список фронт-моделей (Arena сама роутит).
    */
   async listAgents() {
     if (this._agentCache && Date.now() - this._agentCache.at < 10 * 60 * 1000) {
       return this._agentCache.agents;
     }
     let agents = null;
-    // 1) пробуем API-эндпоинт
-    try {
-      const r = await fetch(ARENA_CFG.baseUrl + ARENA_CFG.endpoints.agents, {
-        headers: this.headers(),
-        signal: AbortSignal.timeout(ARENA_CFG.timeoutMs),
-      });
-      if (r.ok) {
+    for (const p of ARENA_CFG.endpoints.agentsGuesses) {
+      try {
+        const r = await fetch(ARENA_CFG.baseUrl + p, {
+          headers: this.headers(),
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!r.ok) continue;
+        const ct = r.headers.get("content-type") || "";
+        if (!ct.includes("json")) continue;
         const j = await r.json();
-        const arr = Array.isArray(j) ? j : j.agents || j.data || j.models || [];
+        const arr = Array.isArray(j) ? j : j.agents || j.models || j.data || [];
         if (arr.length) {
           agents = arr.map((a, i) =>
             typeof a === "string"
               ? { id: slugify(a), name: a }
-              : { id: a.id || a.modelId || slugify(a.name) + i, name: a.name || a.model || a.title || "agent-" + i }
+              : { id: a.id || a.modelId || a.slug || slugify(a.name || a.model || "") + "-" + i,
+                  name: a.name || a.model || a.title || "agent-" + i }
           );
+          break;
         }
-      }
-    } catch { /* переходим к следующему источнику */ }
-    // 2) пробуем найти модели в HTML главной (JSON-конфиг фронтенда)
-    if (!agents) {
-      try {
-        const r = await fetch(ARENA_CFG.baseUrl + ARENA_CFG.endpoints.home, {
-          headers: { Cookie: this.cookie },
-          signal: AbortSignal.timeout(ARENA_CFG.timeoutMs),
-        });
-        const html = await r.text();
-        const names = new Set();
-        for (const m of ARENA_CFG.fallbackAgents) {
-          if (html.toLowerCase().includes(m.toLowerCase())) names.add(m);
-        }
-        if (names.size) agents = [...names].map((n) => ({ id: slugify(n), name: n }));
-      } catch { /* не критично */ }
+      } catch { /* пробуем следующий */ }
     }
-    // 3) запасной список
     if (!agents) agents = ARENA_CFG.fallbackAgents.map((n) => ({ id: slugify(n), name: n }));
 
     this._agentCache = { at: Date.now(), agents };
     return agents;
   }
 
-  /** Модели Арены = её AI-агенты (и их предлагает приложение). */
+  /** Модели Арены = её AI-агенты (их и предлагаем в селекторе). */
   async listModels() {
     return this.listAgents();
   }
 
-  /** Создать РЕАЛЬНЫЙ чат на сайте Арены. */
+  /**
+   * «Реальный чат» Арены создаётся первым сообщением (эндпоинт
+   * create-chat). Локальный id чата для нас — store; серверный id
+   * не нужен для отправки, поэтому createChat — best-effort no-op.
+   */
   async createChat({ model }) {
-    const r = await fetch(ARENA_CFG.baseUrl + ARENA_CFG.endpoints.chatNew, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ model }),
-      signal: AbortSignal.timeout(ARENA_CFG.timeoutMs),
-    });
-    if (!r.ok) {
-      // Не фатально: продолжаем в «локальном» режиме (чат живёт у нас)
-      return { id: null, note: "HTTP " + r.status };
-    }
-    try {
-      const j = await r.json();
-      const id = j.chatId || j.id || (j.data && (j.data.chatId || j.data.id)) || null;
-      return { id };
-    } catch {
-      return { id: null };
-    }
+    return { id: null };
   }
 
-  /** Отправить сообщение в реальный чат Арины (стрим ответа). */
+  /** Отправить сообщение в чат Арены (SSE-стрим ответа). */
   async *streamChat({ model, messages, signal, chatId }) {
     const last = [...messages].reverse().find((m) => m.role === "user");
-    const history = messages
-      .filter((m) => m.role !== "system")
-      .slice(-24)
-      .map((m) => ({ role: m.role, content: m.content }));
-    const r = await fetch(ARENA_CFG.baseUrl + ARENA_CFG.endpoints.chatSend, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ chatId: chatId || null, model, message: last ? last.content : "", history }),
-      signal,
-    });
+    if (!last) throw new Error("Нет пользовательского сообщения для отправки");
+
+    const body = {
+      source: "agentic_chat_submit",
+      message: {
+        id: crypto.randomUUID(),
+        role: "user",
+        parts: [{ text: String(last.content) }],
+        metadata: { manifestNodeId: null },
+      },
+    };
+    if (chatId) body.chatId = chatId;   // если сервер примет — продолжим именно этот чат
+    if (model) body.model = model;      // если сервер примет — маршрутизирует по модели
+
+    let r;
+    try {
+      r = await fetch(ARENA_CFG.baseUrl + ARENA_CFG.endpoints.send, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (e) {
+      if (signal && signal.aborted) throw e;
+      throw new Error("Arena AI: соединение обрывается (сеть/VPN) — переподключаюсь");
+    }
+
     if (!r.ok) {
-      const body = (await r.text()).slice(0, 220);
-      if (r.status === 401 || r.status === 403) {
-        throw new ProviderError("session_expired", "Arena AI: сессия прервана во время запроса (HTTP " + r.status + "). Нажми «Переподключиться» или обнови куку в Настройках.");
+      const t = (await r.text().catch(() => "")).slice(0, 300);
+      if (r.status === 401) {
+        throw new ProviderError(
+          "session_expired",
+          "Arena AI: сессия прервана во время запроса (401). Скопируй куку заново в " +
+          "Настройках → «Обновить сессию», затем «Переподключиться»."
+        );
+      }
+      if (/captcha|recaptcha/i.test(t)) {
+        throw new ProviderError(
+          "captcha",
+          "Arena требует reCAPTCHA на отправку сообщений — без браузера это не обойти " +
+          "(защита сайта от ботов). Варианты: 1) войди заново в браузере и скопируй куку " +
+          "ещё раз; 2) используй dahl.global или OpenRouter для этого запроса."
+        );
+      }
+      if (r.status === 403) {
+        throw new ProviderError(
+          "session_expired",
+          "Arena AI: HTTP 403 (доступ запрещён). Кука, возможно, неполная — скопируй её " +
+          "заново через F12 → Network. Подробности: " + t
+        );
       }
       if (r.status === 429) throw new Error("429: Arena AI — превышен лимит запросов");
-      throw new Error("Arena AI: HTTP " + r.status + " — " + body);
+      throw new Error("Arena AI: HTTP " + r.status + " — " + t);
     }
+
     yield* parseSSE(r, "Arena AI");
   }
 
   /** Удалить старый чат на сайте (best-effort — после переноса). */
   async deleteChat(chat) {
-    if (!chat || !chat.remoteId) return;
-    try {
-      await fetch(ARENA_CFG.baseUrl + ARENA_CFG.endpoints.chatDel, {
-        method: "DELETE",
-        headers: this.headers(),
-        body: JSON.stringify({ chatId: chat.remoteId }),
-        signal: AbortSignal.timeout(15000),
-      });
-    } catch { /* старый чат удалится у нас локально в любом случае */ }
+    // Публичного DELETE-эндпоинта нет — локальный архив (engine.js) и есть удаление.
+    void chat;
   }
 }
 

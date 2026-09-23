@@ -312,8 +312,8 @@
       btn.classList.remove("is-busy");
       arenaBusy = false;
       if (r.ok) {
-        $("#sess-state").textContent = "активна ✓";
-        toast("Сессия Arena обновлена — загружено агентов: " + (r.agents ? r.agents.length : 0));
+        $("#sess-state").textContent = "активна ✓" + (r.user ? " · " + r.user : "");
+        toast("Сессия Arena активна" + (r.user ? " (" + r.user + ")" : "") + " — агентов в списке: " + (r.agents ? r.agents.length : 0));
         // обновляем список агентов
         cc.providers.listModels("arena").then((res) => {
           if (res.ok) { modelsCache.arena = res.models; renderModelLists($("#model-search").value); }
@@ -326,7 +326,7 @@
   }
   function checkArenaSilent() {
     cc.providers.refreshArena().then((r) => {
-      $("#sess-state").textContent = r.ok ? "активна" : "нет куки";
+      $("#sess-state").textContent = r.ok ? "активна" + (r.user ? " · " + r.user : "") : "нет куки";
       if (r.ok) modelsCache.arena = r.agents || [];
       renderModelLists($("#model-search").value);
     });

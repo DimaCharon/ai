@@ -150,9 +150,9 @@ function registerIpc() {
   ipcMain.handle("providers:refreshArena", async () => {
     const p = engine.providers.arena;
     try {
-      await p.check();
+      const chk = await p.check();
       const agents = await p.listAgents();
-      return { ok: true, agents };
+      return { ok: true, agents, user: chk.username || null };
     } catch (err) {
       return { ok: false, code: err.code || "error", error: err.message || String(err) };
     }

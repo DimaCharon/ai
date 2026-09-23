@@ -1,7 +1,7 @@
 {
   "name": "charon-code",
   "productName": "Charon Code",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Charon Code — десктопный AI-проводник: Arena AI, dahl.global, OpenRouter (free). Локальная база данных, оверлей-маскот, доступ к файлам и терминалу.",
   "main": "main.js",
   "author": "Charon",

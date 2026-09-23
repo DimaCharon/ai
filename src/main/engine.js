@@ -46,6 +46,7 @@ function friendly(err, providerName) {
   if (err && err.providerError) return err.message;
   const s = String((err && (err.message || err.name)) || err);
   if (/AbortError|timeout|aborted/i.test(s)) return providerName + " не отвечает (таймаут " + Math.round(ATTEMPT_TIMEOUT_MS / 1000) + " с) — переподключаюсь";
+  if (/terminated|UND_ERR/i.test(s)) return "Связь с " + providerName + " рвётся («terminated»: соединение закрывает оператор/VPN/сервер) — попробуй сменить VPN или другой провайдер";
   if (/fetch failed|ECONNRESET|ECONNREFUSED|EAI_AGAIN|socket|network/i.test(s)) return "Связь с " + providerName + " обрывается (сеть/сервер) — переподключаюсь";
   if (/401|403/.test(s)) return providerName + ": доступ запрещён (401/403) — проверь ключ или куку";
   if (/429/.test(s)) return providerName + ": превышен лимит запросов (429) — жду и повторяю";

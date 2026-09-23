@@ -7,12 +7,27 @@
      • deepseek-ai/DeepSeek-V4-Flash-0731
      • MiniMaxAI/MiniMax-M2.7
      • zai-org/GLM-5.3-Flash
+
+   Анти-«terminated» (соединение рвётся из РФ/оператором/VPN):
+     • Connection: close — всегда свежее TLS-соединение
+       (не трогаем пул, где могут жить «протухшие» сокеты);
+     • check() — живая диагностика GET /v1/models:
+       401 → «ключ не принят» сразу, без 10 пустых попыток;
+       сеть не отвечает → понятное сообщение про VPN;
+     • FALLBACK: если SSE-поток оборвался ДО первого токена —
+       повторяем тот же запрос с stream:false (единый JSON-ответ
+       переживает обрывы надёжнее длинного стрима).
    ============================================================ */
 "use strict";
 
 const { Provider, ProviderError } = require("./base");
 const store = require("../store");
 const { parseSSE } = require("./sse");
+
+const NET_HINT =
+  "Соединение с dahl.global рвётся («terminated»): обычно это оператор, " +
+  "VPN или прокси. Попробуй включить/сменить VPN, или другой провайдер, " +
+  "или нажми «Переподключиться».";
 
 class Dahl extends Provider {
   id = "dahl";
@@ -34,7 +49,21 @@ class Dahl extends Provider {
     return {
       Authorization: "Bearer " + this.key,
       "Content-Type": "application/json",
+      // свежее соединение на каждый запрос — исключаем «протухшие» сокет-пулы
+      Connection: "close",
     };
+  }
+
+  /** Быстрый HTTP-статус с таймаутом. */
+  async httpStatus(path, timeoutMs) {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), timeoutMs);
+    try {
+      const r = await fetch(this.base + path, { headers: this.headers(), signal: c.signal });
+      return r.status;
+    } finally {
+      clearTimeout(t);
+    }
   }
 
   async check() {
@@ -44,26 +73,71 @@ class Dahl extends Provider {
         "Нет ключа dahl.global. Откройте Настройки (⚙) и вставьте API-ключ для inference.dahl.global."
       );
     }
+    // Живая диагностика: сервер доступен из этой сети? Ключ валиден?
+    try {
+      const st = await this.httpStatus("/models", 12000);
+      if (st === 401 || st === 403) {
+        throw new ProviderError(
+          "no_key",
+          "dahl.global: ключ не принят (HTTP " + st + "). Проверь ключ в Настройках."
+        );
+      }
+    } catch (e) {
+      if (e && e.providerError) throw e;
+      throw new ProviderError("network", NET_HINT);
+    }
   }
 
   async listModels() {
     return Dahl.MODELS;
   }
 
+  /** Разбор ответа (HTTP-статусы одинаковы для stream и non-stream). */
+  async handleHttpError(r) {
+    const body = (await r.text().catch(() => "")).slice(0, 220);
+    if (r.status === 401) throw new ProviderError("no_key", "dahl.global: ключ не принят (401). Проверь ключ в Настройках.");
+    if (r.status === 429) throw new Error("429: превышен лимит запросов dahl.global");
+    throw new Error("dahl.global: HTTP " + r.status + " — " + body);
+  }
+
   async *streamChat({ model, messages, signal }) {
-    const r = await fetch(this.base + "/chat/completions", {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ model, messages, stream: true }),
-      signal,
-    });
-    if (!r.ok) {
-      const body = (await r.text()).slice(0, 220);
-      if (r.status === 401) throw new ProviderError("no_key", "dahl.global: ключ не принят (401). Проверь ключ в Настройках.");
-      if (r.status === 429) throw new Error("429: превышен лимит запросов dahl.global");
-      throw new Error("dahl.global: HTTP " + r.status + " — " + body);
+    const h = this.headers();
+
+    /* --- 1) основной запрос: SSE-стрим --- */
+    let gotToken = false;
+    try {
+      const r = await fetch(this.base + "/chat/completions", {
+        method: "POST",
+        headers: h,
+        body: JSON.stringify({ model, messages, stream: true }),
+        signal,
+      });
+      if (!r.ok) await this.handleHttpError(r);
+      for await (const ev of parseSSE(r, this.name)) {
+        gotToken = true;
+        yield ev;
+      }
+      return;
+    } catch (err) {
+      if (gotToken) throw err; // ответ уже начал печататься — движок соберёт заново
+      if (signal && signal.aborted) throw err; // таймаут/«Стоп» — не ковыряемся
+
+      /* --- 2) FALLBACK: поток оборвался до первого токена →
+             повторяем с stream:false (один JSON, без длинного стрима) --- */
+      const r2 = await fetch(this.base + "/chat/completions", {
+        method: "POST",
+        headers: h,
+        body: JSON.stringify({ model, messages, stream: false }),
+        signal,
+      });
+      if (!r2.ok) await this.handleHttpError(r2);
+      const j = await r2.json();
+      const text =
+        (j.choices && j.choices[0] && j.choices[0].message?.content) || "";
+      if (!text) throw err; // нет текста — отдаём исходную ошибку, она точнее
+      yield { type: "token", text };
+      return;
     }
-    yield* parseSSE(r, "dahl.global");
   }
 }
 

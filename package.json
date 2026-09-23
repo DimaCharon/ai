@@ -19,6 +19,7 @@
     "appId": "com.charon.code",
     "productName": "Charon Code",
     "copyright": "© 2026 Charon",
+    "publish": null,
     "files": [
       "main.js",
       "preload.js",

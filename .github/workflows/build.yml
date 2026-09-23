@@ -36,6 +36,9 @@ jobs:
 
       - name: Сборка .exe (electron-builder)
         run: npm run dist
+        env:
+          # встроенный токен workflow (нужен electron-builder в CI-режиме)
+          GH_TOKEN: ${{ github.token }}
         # Если захочешь подписывать exe своим сертификатом — раскомментируй:
         # env:
         #   CSC_LINK: <баз64-сертификат или ссылка>

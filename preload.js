@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("cc", {
   chat: {
     list: () => ipcRenderer.invoke("chat:list"),
     get: (id) => ipcRenderer.invoke("chat:get", id),
+    delete: (id) => ipcRenderer.invoke("chat:delete", id),
     send: (payload) => ipcRenderer.invoke("chat:send", payload),
     stop: (chatId) => ipcRenderer.invoke("chat:stop", chatId),
     onToken: (cb) => on("chat:token", cb),

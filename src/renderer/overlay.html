@@ -36,12 +36,13 @@
       width: 78px; height: 45px; display: block; margin: 13px auto 0;
       image-rendering: pixelated; position: relative; z-index: 1;
     }
-    #slot.pop { animation: pop .62s cubic-bezier(.3,1.35,.45,1) forwards; }
+    #slot.pop { animation: pop .7s cubic-bezier(.3,1.35,.45,1) forwards; }
+    /* «выкатывается» из угла: подкат + лёгкий наклон, как шарик */
     @keyframes pop {
-      0%   { transform: translate(150%, 170%); }
-      62%  { transform: translate(-8%, -10%); }
-      82%  { transform: translate(3%, 3%); }
-      100% { transform: translate(0, 0); }
+      0%   { transform: translate(150%, 170%) rotate(28deg); }
+      62%  { transform: translate(-9%, -11%) rotate(-5deg); }
+      82%  { transform: translate(3%, 3%) rotate(2deg); }
+      100% { transform: translate(0, 0) rotate(0); }
     }
     #slot.bob canvas { animation: bob 1.7s steps(2) infinite; }
     @keyframes bob { 50% { transform: translateY(1px); } }

@@ -302,6 +302,7 @@ input, textarea, select { font-family: inherit; font-weight: 500; }
 .m-dot.g-arena { background: var(--orange); }
 .m-dot.g-dahl { background: var(--blue); }
 .m-dot.g-or { background: #5ad48f; }
+.m-dot.g-xkiro { background: #c084fc; }
 .m-info { flex: 1; min-width: 0; }
 .m-info b { font-size: 12.5px; font-weight: 700; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-info small { font-size: 10.5px; color: var(--mut); font-weight: 500; }
@@ -510,6 +511,13 @@ input, textarea, select { font-family: inherit; font-weight: 500; }
   padding: 8px 10px; border-radius: 10px; cursor: pointer;
 }
 .history-row:hover { background: rgba(255,255,255,.06); }
+.hist-del {
+  opacity: 0; flex: none; margin-left: auto;
+  font-size: 12px; line-height: 1;
+  transition: opacity .15s;
+}
+.history-row:hover .hist-del { opacity: .75; }
+.hist-del:hover { opacity: 1 !important; color: #ff7b7b; }
 
 /* настройки */
 .f-label { font-size: 11px; font-weight: 700; color: var(--mut); display: block; margin: 10px 0 4px; letter-spacing: .4px; }

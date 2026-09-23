@@ -161,6 +161,7 @@ function registerIpc() {
   /* ---------- чат (движок «1 нажатие = 1 ответ») ---------- */
   ipcMain.handle("chat:list", () => store.listChats());
   ipcMain.handle("chat:get", (_e, id) => store.getChat(id));
+  ipcMain.handle("chat:delete", (_e, id) => store.deleteChat(id));
   ipcMain.handle("chat:stop", (_e, chatId) => { engine.stopChat(chatId); return { ok: true }; });
   ipcMain.handle("chat:send", async (e, payload) => {
     // Один AbortController на запрос: «Стоп» в UI прервёт его.
@@ -186,9 +187,15 @@ function registerIpc() {
   ipcMain.handle("terminal:kill", (_e, runId) => fsSvc.kill(runId));
 
   /* ---------- маскот ---------- */
-  /** Задача завершилась: показать оверлей (если включено в настройках). */
+  /**
+   * Задача завершилась: показать оверлей.
+   *   mascotShow       — маскот вообще (мини + оверлей);
+   *   showMascotOnDone — оверлей именно при завершении задачи;
+   *   chimeOnDone      — тихий чим (решила рендерер-сторона).
+   */
   ipcMain.on("mascot:taskDone", () => {
     const s = store.getSettings();
+    if (s.mascotShow === false) return;
     if (s.showMascotOnDone) {
       showOverlay("Задача выполнена — кликни, чтобы вернуться");
     }

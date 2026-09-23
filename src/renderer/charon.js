@@ -5,6 +5,16 @@
    '#' — тело, 'e' — глаз, '.' — пусто. Ничего не придумано.
    Канвас 26×15: два лишних столбца справа — для «руки»,
    которая поднимается в кадрах машания.
+
+   Живое поведение (всё включается выключается настройками):
+   • startIdle()   — моргание (idle-цикл);
+   • lookAt(x,y)   — ГЛАЗА следят за мышкой: зрачок «растёт»
+                     в сторону курсора (тело стоит на месте);
+                     если курсор рядом — машет рукой (не чаще
+                     раза в 4 с);
+   • wave(n)       — машет правой рукой;
+   • setAnim(on)   — анимация вкл/выкл (выкл = статичный кадр);
+   • setHidden(h) — сам маскот вкл/выкл.
    ============================================================ */
 (() => {
   "use strict";
@@ -55,8 +65,12 @@
     }),
   };
 
-  /** Нарисовать кадр на canvas (размер канваса кратен 26×15). */
-  function renderFrame(canvas, name) {
+  /**
+   * Нарисовать кадр. ox/oy (−1/0/1) — куда «смотрят» глаза:
+   * зрачок тянется на одну клетку в сторону курсора
+   * (тело при этом не двигается — «стоит на месте»).
+   */
+  function renderFrame(canvas, name, ox = 0, oy = 0) {
     const ctx = canvas.getContext("2d");
     const px = Math.floor(canvas.width / CW);
     const py = Math.floor(canvas.height / H);
@@ -66,29 +80,48 @@
       for (let c = 0; c < CW; c++) {
         const ch = grid[r][c];
         if (ch === ".") continue;
-        ctx.fillStyle = ch === "e" ? COLORS.eye : COLORS.body;
-        ctx.fillRect(c * px, r * py, px, py);
+        const isEye = ch === "e";
+        ctx.fillStyle = isEye ? COLORS.eye : COLORS.body;
+        if (isEye && (ox || oy) && name !== "blink") {
+          // зрачок: базовая клетка + вытянутая в сторону курсора
+          ctx.fillRect(c * px, r * py, px, py);
+          if (ox > 0) ctx.fillRect((c + 1) * px, r * py, px, py);
+          if (ox < 0) ctx.fillRect((c - 1) * px, r * py, px, py);
+          if (oy > 0) ctx.fillRect(c * px, (r + 1) * py, px, py);
+          if (oy < 0) ctx.fillRect(c * px, (r - 1) * py, px, py);
+        } else {
+          ctx.fillRect(c * px, r * py, px, py);
+        }
       }
     }
   }
 
-  /** Живой маскот: idle (бывает моргает) + wave() — машет рукой. */
+  /** Живой маскот: idle (моргает) + follow за мышкой + wave(). */
   class CharonSprite {
-    constructor(canvas, { blink = true } = {}) {
+    constructor(canvas, { blink = true, anim = true } = {}) {
       this.canvas = canvas;
       this.blinkEnabled = blink;
+      this.anim = anim;          // анимация вкл/выкл
+      this.tracking = true;      // следит ли за мышкой
       this.timers = [];
       this.waving = false;
+      this.eyeOX = 0; this.eyeOY = 0;
+      this.lastWaveAt = 0;
+      this._lastLookAt = 0;
       renderFrame(canvas, "idle");
+    }
+
+    _paint(name) {
+      renderFrame(this.canvas, name, this.eyeOX, this.eyeOY);
     }
 
     startIdle() {
       this.stop();
-      if (!this.blinkEnabled) return;
+      if (!this.blinkEnabled || !this.anim) return;
       const tick = () => {
-        if (this.waving) return;
-        renderFrame(this.canvas, "blink");
-        this.timers.push(setTimeout(() => renderFrame(this.canvas, "idle"), 160));
+        if (this.waving || !this.anim) return;
+        this._paint("blink");
+        this.timers.push(setTimeout(() => this._paint("idle"), 160));
         this.timers.push(setTimeout(tick, 2200 + Math.random() * 3500));
       };
       this.timers.push(setTimeout(tick, 1400 + Math.random() * 2200));
@@ -97,7 +130,7 @@
     stop() {
       this.timers.forEach(clearTimeout);
       this.timers = [];
-      if (!this.waving) renderFrame(this.canvas, "idle");
+      if (!this.waving) this._paint("idle");
     }
 
     /** Машет правой рукой cycles циклов, затем возвращается в idle. */
@@ -106,18 +139,65 @@
       this.waving = true;
       let i = 0;
       const step = () => {
-        renderFrame(this.canvas, i % 2 ? "waveB" : "waveA");
+        renderFrame(this.canvas, i % 2 ? "waveB" : "waveA", this.eyeOX, this.eyeOY);
         i++;
         if (i <= cycles * 2) {
           this.timers.push(setTimeout(step, 170));
         } else {
           this.waving = false;
-          renderFrame(this.canvas, "idle");
+          this._paint("idle");
           this.startIdle();
           if (onDone) onDone();
         }
       };
       step();
+    }
+
+    /**
+     * Глаза следят за точкой (координаты страницы).
+     * Тело стоит на месте. Если курсор оказался рядом —
+     * коротко машет (не чаще раза в 4 с).
+     */
+    lookAt(pageX, pageY) {
+      if (!this.anim || !this.tracking) return;
+      const now = Date.now();
+      if (now - this._lastLookAt < 90) return; // троттлинг
+      this._lastLookAt = now;
+
+      const b = this.canvas.getBoundingClientRect();
+      const cx = b.left + b.width / 2;
+      const cy = b.top + b.height / 2;
+      const dx = pageX - cx, dy = pageY - cy;
+      const ox = Math.abs(dx) > 60 ? Math.sign(dx) : 0;
+      const oy = Math.abs(dy) > 40 ? Math.sign(dy) : 0;
+      if (ox !== this.eyeOX || oy !== this.eyeOY) {
+        this.eyeOX = ox; this.eyeOY = oy;
+        if (!this.waving) this._paint("idle");
+      }
+      // курсор рядом с маскотом → помахал (рукой «привет»)
+      const near =
+        pageX > b.left - 90 && pageX < b.right + 90 &&
+        pageY > b.top - 60 && pageY < b.bottom + 60;
+      if (near && !this.waving && now - this.lastWaveAt > 4000) {
+        this.lastWaveAt = now;
+        this.wave(2);
+      }
+    }
+
+    /** Анимация вкл/выкл. Выкл = статичный кадр, глаза по центру. */
+    setAnim(on) {
+      this.anim = !!on;
+      if (!this.anim) {
+        this.eyeOX = 0; this.eyeOY = 0;
+        this.stop();
+      } else {
+        this.startIdle();
+      }
+    }
+
+    /** Сам маскот вкл/выкл (мини-канвас). */
+    setHidden(h) {
+      this.canvas.style.display = h ? "none" : "";
     }
   }
 

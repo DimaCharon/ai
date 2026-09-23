@@ -104,14 +104,18 @@ const DEFAULT_SETTINGS = {
   keys: {
     openrouter: "",    // ключ OpenRouter (бесплатные модели)
     dahl: "",          // ключ inference.dahl.global
-    arenaCookie: "",   // сессионная кука Arena AI (lmarena.ai)
+    arenaCookie: "",   // сессионная кука Arena AI (arena.ai)
+    xkiro: "",         // XTROUTER_API_KEY (api.xkiro.com)
   },
   model: {
-    provider: "openrouter", // openrouter | dahl | arena
+    provider: "openrouter", // openrouter | dahl | arena | xkiro
     id: "deepseek/deepseek-chat-v3-0324:free",
   },
-  arenaLimit: 30,       // лимит сообщений на чат в Arena (укажи свой реальный)
+  arenaLimit: 30,        // лимит сообщений на чат в Arena (Agent Mode ≈ 5!)
+  mascotShow: true,      // маскот: показывать (мини в строке + оверлей)
+  mascotAnim: true,      // анимация маскота: моргание, машет, следит за мышкой
   showMascotOnDone: true, // маскот + чим при завершении задачи
+  chimeOnDone: true,     // тихий чим при завершении задачи
 };
 
 function getSettings() {
@@ -178,6 +182,14 @@ function archiveChat(chat) {
   } catch { /* уже не существует */ }
 }
 
+/** Удаление чата пользователем — в архив (можно вернуть: chats/archive). */
+function deleteChat(id) {
+  const chat = getChat(id);
+  if (!chat) return { ok: false, error: "Чат не найден" };
+  archiveChat(chat);
+  return { ok: true };
+}
+
 /* ============================================================
    СТАТИСТИКА (вкладка Overview) — считается из реальных данных
    ============================================================ */
@@ -242,4 +254,4 @@ function formatTokens(n) {
   return String(n);
 }
 
-module.exports = { auth, getSettings, saveSettings, newChat, getChat, saveChat, listChats, archiveChat, stats, dataDir };
+module.exports = { auth, getSettings, saveSettings, newChat, getChat, saveChat, listChats, archiveChat, deleteChat, stats, dataDir };

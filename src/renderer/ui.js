@@ -139,10 +139,7 @@
     loadModels();
     loadStats();
     checkArenaSilent();
-
-    // мини-маскот в строке папок
-    miniSprite = new window.CharonSprite($("#mini-canvas"), { blink: true });
-    miniSprite.startIdle();
+    applyMascotSettings(s); // мини-маскот по настройкам
     renderChips();
   }
 
@@ -198,12 +195,13 @@
   /* ============================================================
      МОДЕЛИ: три провайдера (Arena-агенты / dahl / OpenRouter free)
      ============================================================ */
-  const modelsCache = { arena: [], dahl: [], openrouter: [] };
+  const modelsCache = { arena: [], dahl: [], openrouter: [], xkiro: [] };
   const modelsNote = {}; // провайдер -> текст ошибки/подсказки
   const GROUPS = [
     { id: "arena", label: "Arena AI · агенты сессии", dot: "g-arena" },
     { id: "dahl", label: "dahl.global", dot: "g-dahl" },
     { id: "openrouter", label: "OpenRouter · только free", dot: "g-or" },
+    { id: "xkiro", label: "XRouter · xkiro.com (free)", dot: "g-xkiro" },
   ];
 
   function modelTag(m, provider) {
@@ -290,7 +288,7 @@
   function applyModelBadge(provider, id) {
     $("#model-name").textContent = id.length > 34 ? id.slice(0, 32) + "…" : id;
     $("#model-tier").textContent =
-      provider === "arena" ? "Arena" : provider === "dahl" ? "dahl" : "free";
+      provider === "arena" ? "Arena" : provider === "dahl" ? "dahl" : provider === "xkiro" ? "xkiro" : "free";
   }
   document.addEventListener("click", (e) => {
     const row = e.target.closest(".model-row");
@@ -343,16 +341,15 @@
     if (pops.model.classList.contains("hidden")) openPop("model");
     else closePops();
   });
-  $("#btn-history").addEventListener("click", async (e) => {
-    e.stopPropagation();
+  /** Список чатов в поповере «История» (открытие + после удаления). */
+  async function renderHistory() {
     const list = $("#pop-history-list");
-    list.innerHTML = `<div class="empty">Загрузка…</div>`;
-    if (pops.history.classList.contains("hidden")) openPop("history");
     const chats = await cc.chat.list();
     let html = `<div class="history-new"><button class="glass-btn pill-btn" id="hist-new">＋ Новый чат</button></div>`;
     html += chats.length
       ? chats.map((c) => `<div class="history-row" data-id="${c.id}" title="${escHtml(c.model)}">
           <div class="m-info"><b>${escHtml(c.title)}</b><small>${escHtml(c.model)} · ${c.count} сообщ. · ${new Date(c.updatedAt).toLocaleDateString()}</small></div>
+          <button class="icon-btn hist-del" data-id="${c.id}" title="Удалить чат (в архив)">🗑</button>
         </div>`).join("")
       : `<div class="empty">Пока нет чатов — начни первый</div>`;
     list.innerHTML = html;
@@ -366,6 +363,27 @@
         window.CC.Chat.loadChat(r.dataset.id);
       })
     );
+    $$("#pop-history-list .hist-del").forEach((b) =>
+      b.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const ok = await confirm(
+          "Удалить чат?",
+          "Переписка переедет в архив (AppData\\Roaming\\Charon Code\\chats\\archive) — из интерфейса пропадёт.",
+          "Удалить"
+        );
+        if (!ok) return;
+        await cc.chat.delete(b.dataset.id);
+        toast("Чат удалён");
+        renderHistory();
+      })
+    );
+  }
+  $("#btn-history").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const list = $("#pop-history-list");
+    list.innerHTML = `<div class="empty">Загрузка…</div>`;
+    if (pops.history.classList.contains("hidden")) openPop("history");
+    renderHistory();
   });
 
   /* ============================================================
@@ -378,23 +396,31 @@
       $("#key-or").value = s.keys.openrouter || "";
       $("#key-dahl").value = s.keys.dahl || "";
       $("#key-arena").value = s.keys.arenaCookie || "";
+      $("#key-xkiro").value = s.keys.xkiro || "";
       $("#set-arena-limit").value = s.arenaLimit;
-      $("#set-mascot").checked = !!s.showMascotOnDone;
+      $("#set-mascot").checked = s.mascotShow !== false;
+      $("#set-mascot-anim").checked = s.mascotAnim !== false;
+      $("#set-chime").checked = s.chimeOnDone !== false;
       openPop("settings");
     } else closePops();
   });
   $("#btn-save").addEventListener("click", async () => {
-    await cc.settings.save({
+    const saved = await cc.settings.save({
       keys: {
         openrouter: $("#key-or").value.trim(),
         dahl: $("#key-dahl").value.trim(),
         arenaCookie: $("#key-arena").value.trim(),
+        xkiro: $("#key-xkiro").value.trim(),
       },
       arenaLimit: Math.max(4, Number($("#set-arena-limit").value) || 30),
+      mascotShow: $("#set-mascot").checked,
+      mascotAnim: $("#set-mascot-anim").checked,
+      chimeOnDone: $("#set-chime").checked,
       showMascotOnDone: $("#set-mascot").checked,
     });
     closePops();
     toast("Настройки сохранены (только на этом ПК)");
+    applyMascotSettings(saved);
     checkArenaSilent();
   });
   $("#btn-logout").addEventListener("click", async () => {
@@ -580,7 +606,36 @@
   /* ============================================================
      МАСКОТ (мини в строке папок) + ЧИМ
      ============================================================ */
+  /* ============================================================
+     МАСКОТ: мини в строке папок + настройки (вкл/выкл, анимация,
+     следит за мышкой) + тихий чим
+     ============================================================ */
   let miniSprite = null;
+  let chimeEnabled = true;
+
+  /** Применить настройки маскота к мини-канвасу. */
+  function applyMascotSettings(s) {
+    const show = s.mascotShow !== false;
+    const anim = s.mascotAnim !== false;
+    chimeEnabled = s.chimeOnDone !== false;
+    const c = $("#mini-canvas");
+    if (!c) return;
+    if (!miniSprite) miniSprite = new window.CharonSprite(c, { blink: true, anim });
+    miniSprite.setHidden(!show);
+    miniSprite.setAnim(anim);
+    if (show && anim) miniSprite.startIdle();
+  }
+
+  // Глаза (и рука, когда курсор рядом) следят за мышкой по всей странице.
+  let _mmT = 0;
+  document.addEventListener("mousemove", (e) => {
+    if (!miniSprite || miniSprite.canvas.style.display === "none") return;
+    const now = Date.now();
+    if (now - _mmT < 60) return;
+    _mmT = now;
+    miniSprite.lookAt(e.pageX, e.pageY);
+  });
+
   window.addEventListener("load", () => {
     const c = $("#mini-canvas");
     if (c && !miniSprite) {
@@ -592,8 +647,9 @@
       cc.mascot.taskDone();
     });
   });
-  // main показал оверлей → играем тихий чим в главном окне
+  // main показал оверлей → играем тихий чим в главном окне (если включён)
   cc.mascot.onWave(() => {
+    if (!chimeEnabled) return;
     const chime = $("#chime");
     try { chime.currentTime = 0; const p = chime.play(); if (p && p.catch) p.catch(() => {}); } catch { /* нет звука */ }
   });

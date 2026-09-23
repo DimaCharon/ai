@@ -245,6 +245,9 @@
       <label class="f-label">dahl.global · API key</label>
       <input class="f-input" id="key-dahl" type="password" placeholder="Bearer …" spellcheck="false">
 
+      <label class="f-label">XRouter · xkiro.com · XTROUTER_API_KEY</label>
+      <input class="f-input" id="key-xkiro" type="password" placeholder="XTROUTER_API_KEY — free-модели: Qwen, MiniMax, Mistral, SenseNova…" spellcheck="false">
+
       <label class="f-label">Arena AI · сессионная кука (arena.ai)</label>
       <textarea class="f-input" id="key-arena" rows="2" placeholder="F12 → Network → arena.ai → Request Headers → всё значение «cookie:»" spellcheck="false"></textarea>
       <p class="f-hint small">Важно: копировать через <b>Network</b> (не document.cookie — там нет куки Cloudflare). После вставки обязательно нажми <b>«Сохранить»</b> → «Обновить сессию Arena».</p>
@@ -253,7 +256,9 @@
       <input class="f-input" id="set-arena-limit" type="number" min="4" max="500" placeholder="30">
       <p class="f-hint small">Достигли лимита — Charon сам создаст новый чат, перенесёт историю, проверит его и удалит старый.</p>
 
-      <label class="check-row"><input type="checkbox" id="set-mascot"> Маскот + чим при завершении задачи</label>
+      <label class="check-row"><input type="checkbox" id="set-mascot"> Маскот: показывать (мини + оверлей при завершении)</label>
+      <label class="check-row"><input type="checkbox" id="set-mascot-anim"> Анимация маскота: моргает, машет, следит за мышкой</label>
+      <label class="check-row"><input type="checkbox" id="set-chime"> Тихий чим при завершении задачи</label>
 
       <div class="pop-actions">
         <button class="glass-btn pill-btn" id="btn-session-3">↻ Обновить сессию Arena</button>
@@ -265,14 +270,14 @@
 
     <!-- ПОПОВЕР: What's new -->
     <div class="pop glass hidden" id="pop-whats">
-      <div class="pop-head"><b>What's new · 1.0.1</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <div class="pop-head"><b>What's new · 1.0.2</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
       <ul class="whats-list">
-        <li><b>Arena: новый дом</b> — LMArena переехала на arena.ai; адаптер теперь ходит на реальный сайт, проверка сессии по /api/me, показывается твой ник.</li>
-        <li><b>dahl: анти-«terminated»</b> — свежие соединения, авто-переход на non-stream, если поток рвётся; честные подсказки про VPN/оператора.</li>
-        <li><b>Диагностика до 10 попыток</b> — dahl проверяет сеть и ключ сразу; Arena говорит, что именно не так (401/403/CAPTCHA).</li>
-        <li><b>Движок «1 нажатие = 1 ответ»</b> — exponential backoff, до 10 повторов, переподключение при обрыве.</li>
-        <li><b>Авто-миграция чатов</b> — лимит достигнут: новый чат → копия истории → проверка → удаление старого.</li>
-        <li><b>Файлы и терминал, локальная регистрация, оверлей-маскот</b> — как прежде.</li>
+        <li><b>XRouter (xkiro.com) — 4-й провайдер</b> — 37 бесплатных моделей: Qwen, MiniMax, Mistral, SenseNova… Живой список с API, ключ XTROUTER_API_KEY.</li>
+        <li><b>Маскот слушается</b> — вкл/выкл (мини + оверлей), анимация вкл/выкл, чим отдельно; мини-маскот <b>следит за мышкой глазами</b> (тело стоит на месте) и машет, когда курсор рядом.</li>
+        <li><b>Оверлей «выкатывается»</b> — подкат из угла с наклоном, как шарик, затем машет и замеряет.</li>
+        <li><b>История чатов</b> — клик открывает чат, 🗑 (появляется при наведении) удаляет чат в архив.</li>
+        <li><b>1.0.1:</b> Arena на реальном arena.ai (проверка /api/me, твой ник в шапке), dahl анти-«terminated» + non-stream фолбэк.</li>
+        <li><b>База:</b> движок «1 нажатие = 1 ответ», авто-миграция чатов, файлы/терминал, локальная регистрация.</li>
       </ul>
     </div>
 

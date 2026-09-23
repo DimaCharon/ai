@@ -21,6 +21,7 @@ const store = require("./store");
 const { OpenRouter } = require("./providers/openrouter");
 const { Dahl } = require("./providers/dahl");
 const { Arena } = require("./providers/arena");
+const { Xkiro } = require("./providers/xkiro");
 const { ProviderError } = require("./providers/base");
 
 const MAX_ATTEMPTS = 10;
@@ -31,6 +32,7 @@ const providers = {
   openrouter: new OpenRouter(),
   dahl: new Dahl(),
   arena: new Arena(),
+  xkiro: new Xkiro(),
 };
 // у Arena лимит читается из настроек на лету
 Object.defineProperty(providers.arena, "limit", {

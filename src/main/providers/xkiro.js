@@ -16,8 +16,10 @@ const store = require("../store");
 const { parseSSE } = require("./sse");
 
 /* Запасной список (access_tier: free, актуально на 23.09.2026).
-   Живой список подтягивается с /v1/models, это только фолбэк. */
+   Живой список подтягивается с /v1/models, это только фолбэк.
+   vision: true — модель видит изображения (скриншоты экрана). */
 const FALLBACK_FREE = [
+  { id: "deepseek/deepseek-v4.1-flash:free", name: "DeepSeek V4.1 Flash (Free)", vision: true },
   { id: "minimax/minimax-m2:free", name: "MiniMax M2 (Free)" },
   { id: "minimax/minimax-m2.1:free", name: "MiniMax M2.1 (Free)" },
   { id: "minimax/minimax-m2.1-highspeed:free", name: "MiniMax M2.1 Highspeed (Free)" },
@@ -25,36 +27,36 @@ const FALLBACK_FREE = [
   { id: "minimax/minimax-m2.5-highspeed:free", name: "MiniMax M2.5 Highspeed (Free)" },
   { id: "minimax/minimax-m2.7:free", name: "MiniMax M2.7 (Free)" },
   { id: "minimax/minimax-m2.7-highspeed:free", name: "MiniMax M2.7 Highspeed (Free)" },
-  { id: "minimax/minimax-m3:free", name: "MiniMax M3 (Free)" },
+  { id: "minimax/minimax-m3:free", name: "MiniMax M3 (Free)", vision: true },
   { id: "mistralai/codestral-2508", name: "Codestral" },
   { id: "mistralai/devstral-medium", name: "Devstral 2" },
-  { id: "mistralai/ministral-14b", name: "Ministral 3 14B" },
-  { id: "mistralai/ministral-3b", name: "Ministral 3 3B" },
-  { id: "mistralai/ministral-8b", name: "Ministral 3 8B" },
-  { id: "mistralai/mistral-large-2512", name: "Mistral Large 3" },
-  { id: "mistralai/mistral-medium-3.5", name: "Mistral Medium 3.5" },
-  { id: "mistralai/mistral-small-2603", name: "Mistral Small 4" },
-  { id: "qwen/qwen-plus-2025-07-28:free", name: "Qwen Plus 0728 (Free)" },
-  { id: "qwen/qwen3-coder-plus:free", name: "Qwen3 Coder Plus (Free)" },
-  { id: "qwen/qwen3-max:free", name: "Qwen3 Max (Free)" },
-  { id: "qwen/qwen3-omni-flash:free", name: "Qwen3 Omni Flash (Free)" },
-  { id: "qwen/qwen3-vl-plus:free", name: "Qwen3 VL Plus (Free)" },
-  { id: "qwen/qwen3.5-397b-a17b:free", name: "Qwen3.5 397B A17B (Free)" },
-  { id: "qwen/qwen3.5-flash:free", name: "Qwen3.5 Flash (Free)" },
-  { id: "qwen/qwen3.5-omni-flash:free", name: "Qwen3.5 Omni Flash (Free)" },
-  { id: "qwen/qwen3.5-omni-plus:free", name: "Qwen3.5 Omni Plus (Free)" },
-  { id: "qwen/qwen3.5-plus:free", name: "Qwen3.5 Plus (Free)" },
-  { id: "qwen/qwen3.6-27b:free", name: "Qwen3.6 27B (Free)" },
-  { id: "qwen/qwen3.6-35b-a3b:free", name: "Qwen3.6 35B A3B (Free)" },
+  { id: "mistralai/ministral-14b", name: "Ministral 3 14B", vision: true },
+  { id: "mistralai/ministral-3b", name: "Ministral 3 3B", vision: true },
+  { id: "mistralai/ministral-8b", name: "Ministral 3 8B", vision: true },
+  { id: "mistralai/mistral-large-2512", name: "Mistral Large 3", vision: true },
+  { id: "mistralai/mistral-medium-3.5", name: "Mistral Medium 3.5", vision: true },
+  { id: "mistralai/mistral-small-2603", name: "Mistral Small 4", vision: true },
+  { id: "qwen/qwen-plus-2025-07-28:free", name: "Qwen Plus 0728 (Free)", vision: true },
+  { id: "qwen/qwen3-coder-plus:free", name: "Qwen3 Coder Plus (Free)", vision: true },
+  { id: "qwen/qwen3-max:free", name: "Qwen3 Max (Free)", vision: true },
+  { id: "qwen/qwen3-omni-flash:free", name: "Qwen3 Omni Flash (Free)", vision: true },
+  { id: "qwen/qwen3-vl-plus:free", name: "Qwen3 VL Plus (Free)", vision: true },
+  { id: "qwen/qwen3.5-397b-a17b:free", name: "Qwen3.5 397B A17B (Free)", vision: true },
+  { id: "qwen/qwen3.5-flash:free", name: "Qwen3.5 Flash (Free)", vision: true },
+  { id: "qwen/qwen3.5-omni-flash:free", name: "Qwen3.5 Omni Flash (Free)", vision: true },
+  { id: "qwen/qwen3.5-omni-plus:free", name: "Qwen3.5 Omni Plus (Free)", vision: true },
+  { id: "qwen/qwen3.5-plus:free", name: "Qwen3.5 Plus (Free)", vision: true },
+  { id: "qwen/qwen3.6-27b:free", name: "Qwen3.6 27B (Free)", vision: true },
+  { id: "qwen/qwen3.6-35b-a3b:free", name: "Qwen3.6 35B A3B (Free)", vision: true },
   { id: "qwen/qwen3.6-max-preview:free", name: "Qwen3.6 Max Preview (Free)" },
-  { id: "qwen/qwen3.6-plus:free", name: "Qwen3.6 Plus (Free)" },
-  { id: "qwen/qwen3.7-flash:free", name: "Qwen3.7 Flash (Free)" },
+  { id: "qwen/qwen3.6-plus:free", name: "Qwen3.6 Plus (Free)", vision: true },
+  { id: "qwen/qwen3.7-flash:free", name: "Qwen3.7 Flash (Free)", vision: true },
   { id: "qwen/qwen3.7-max:free", name: "Qwen3.7 Max (Free)" },
-  { id: "qwen/qwen3.7-plus:free", name: "Qwen3.7 Plus (Free)" },
-  { id: "qwen/qwen3.8-max:free", name: "Qwen3.8 Max (Free)" },
-  { id: "qwen/qwen3.8-omni-flash:free", name: "Qwen3.8 Omni Flash (Free)" },
-  { id: "sensenova/sensenova-6.7-flash-lite", name: "SenseNova 6.7 Flash-Lite" },
-  { id: "sensenova/sensenova-6.8-flash-lite", name: "SenseNova 6.8 Flash-Lite" },
+  { id: "qwen/qwen3.7-plus:free", name: "Qwen3.7 Plus (Free)", vision: true },
+  { id: "qwen/qwen3.8-max:free", name: "Qwen3.8 Max (Free)", vision: true },
+  { id: "qwen/qwen3.8-omni-flash:free", name: "Qwen3.8 Omni Flash (Free)", vision: true },
+  { id: "sensenova/sensenova-6.7-flash-lite", name: "SenseNova 6.7 Flash-Lite", vision: true },
+  { id: "sensenova/sensenova-6.8-flash-lite", name: "SenseNova 6.8 Flash-Lite", vision: true },
 ];
 
 class Xkiro extends Provider {
@@ -111,11 +113,25 @@ class Xkiro extends Provider {
         const arr = (j.data || [])
           .filter((m) => m.access_tier === "free" ||
             (m.pricing && Number(m.pricing.input) === 0 && Number(m.pricing.output) === 0))
-          .map((m) => ({ id: m.id, name: m.display_name || m.id, free: true }));
-        if (arr.length) return arr.sort((a, b) => a.name.localeCompare(b.name));
+          .map((m) => ({
+            id: m.id,
+            name: m.display_name || m.id,
+            free: true,
+            vision: !!(m.capabilities && m.capabilities.vision),
+          }));
+        if (arr.length) {
+          this._vision = new Map(arr.map((m) => [m.id, m.vision]));
+          return arr.sort((a, b) => a.name.localeCompare(b.name));
+        }
       }
     } catch { /* сеть/формат — используем запасной список */ }
+    this._vision = new Map(FALLBACK_FREE.map((m) => [m.id, !!m.vision]));
     return FALLBACK_FREE;
+  }
+
+  /** Модель видит изображения (скриншоты экрана)? */
+  supportsVision(modelId) {
+    return this._vision ? this._vision.get(modelId) === true : false;
   }
 
   async handleHttpError(r, label = "XRouter") {

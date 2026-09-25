@@ -151,9 +151,14 @@ function buildSummary(msgs) {
  *  → авто-миграция → запрос движком → сохранение.
  */
 async function sendChat(win, payload, signal) {
-  const { chatId: inChatId, providerId, modelId, text } = payload;
+  const { chatId: inChatId, providerId, modelId, text, screen: screenIn } = payload;
   const provider = providers[providerId];
   if (!provider) throw new ProviderError("unknown", "Неизвестный провайдер: " + providerId);
+
+  /* Экран: микроскриншот прикладывается только к ВИДЯЩИМ моделям
+     (OpenAI-формат: content = [{text}, {image_url: data-URI}]). */
+  const screenData =
+    screenIn && screenIn.dataUrl && provider.supportsVision(modelId) ? screenIn : null;
 
   let chatId = inChatId;
   const emit = {
@@ -189,7 +194,10 @@ async function sendChat(win, payload, signal) {
     } catch { /* локальный режим — не фатально */ }
     store.saveChat(chat);
   }
-  chat.messages.push({ role: "user", content: text, at: Date.now() });
+  chat.messages.push({ role: "user", content: text, at: Date.now(), screen: !!screenData });
+  if (screenIn && !screenData) {
+    emit.status({ text: "Модель " + modelId + " не видит изображения — шлю без скриншота. Выбери модель с меткой 👁 (XRouter/OpenRouter)." });
+  }
 
   /* 3. Лимит чата → авто-миграция (копирую → проверяю → удаляю старый) */
   let migratedFrom = null;
@@ -206,11 +214,30 @@ async function sendChat(win, payload, signal) {
     }
   }
 
-  /* 4. Запрос движком */
+  /* 4. Запрос движком.
+     Месседжи для провайдера: история как есть, а в ПОСЛЕДНЕЕ
+     сообщение пользователя вложен свежий микроскриншот (если есть). */
+  const buildProviderMessages = (msgs) => {
+    let lastUserIdx = -1;
+    msgs.forEach((m, i) => { if (m.role === "user") lastUserIdx = i; });
+    return msgs.map((m, i) => {
+      if (screenData && i === lastUserIdx && m.role === "user") {
+        return {
+          role: "user",
+          content: [
+            { type: "text", text: String(m.content) },
+            { type: "image_url", image_url: { url: screenData.dataUrl } },
+          ],
+        };
+      }
+      return { role: m.role, content: String(m.content) };
+    });
+  };
+
   stopControllers.set(chatId, signal);
   const res = await runRequest(provider, {
     model: modelId,
-    messages: chat.messages,
+    messages: buildProviderMessages(chat.messages),
     signal,
     chatId: chat.remoteId || undefined,
     onToken: (t) => emit.token(t),

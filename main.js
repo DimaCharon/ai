@@ -16,6 +16,7 @@ const path = require("path");
 const store = require("./src/main/store");
 const engine = require("./src/main/engine");
 const fsSvc = require("./src/main/fs");
+const screenSvc = require("./src/main/screen");
 
 let win = null;      // главное окно
 let overlay = null;  // оверлей маскота
@@ -185,6 +186,10 @@ function registerIpc() {
     return fsSvc.run(w, opts);
   });
   ipcMain.handle("terminal:kill", (_e, runId) => fsSvc.kill(runId));
+
+  /* ---------- экран (микроскриншоты для «видения» ИИ) ---------- */
+  ipcMain.handle("screen:list", () => screenSvc.listScreens());
+  ipcMain.handle("screen:capture", (_e, opts) => screenSvc.captureScreen(opts || {}));
 
   /* ---------- маскот ---------- */
   /**

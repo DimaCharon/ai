@@ -44,10 +44,22 @@ class OpenRouter extends Provider {
     const r = await fetch(this.base + "/models", { headers: this.headers(), signal: AbortSignal.timeout(20000) });
     if (!r.ok) throw new Error("OpenRouter: HTTP " + r.status);
     const j = await r.json();
-    return (j.data || [])
+    const arr = (j.data || [])
       .filter((m) => m.id.endsWith(":free") || Number(m.pricing && m.pricing.prompt) === 0)
-      .map((m) => ({ id: m.id, name: m.name || m.id, free: true }))
+      .map((m) => ({
+        id: m.id,
+        name: m.name || m.id,
+        free: true,
+        vision: !!(m.architecture && (m.architecture.input_modalities || []).includes("image")),
+      }))
       .sort((a, b) => a.name.localeCompare(b.name));
+    this._vision = new Map(arr.map((m) => [m.id, m.vision]));
+    return arr;
+  }
+
+  /** Модель видит изображения (скриншоты экрана)? */
+  supportsVision(modelId) {
+    return this._vision ? this._vision.get(modelId) === true : false;
   }
 
   async *streamChat({ model, messages, signal }) {

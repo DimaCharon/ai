@@ -199,6 +199,11 @@
           <button class="icon-btn" id="btn-notice-x" title="Скрыть">×</button>
         </div>
 
+        <div class="screen-preview hidden" id="screen-preview" title="Последний микроскриншот экрана">
+          <img id="screen-preview-img" alt="скриншот">
+          <span id="screen-preview-cap"></span>
+        </div>
+
         <div class="input-bar glass">
           <input id="chat-input" placeholder="Спроси что угодно… (Enter — отправить)" autocomplete="off" spellcheck="false">
           <button class="send-btn glass-btn hidden" id="btn-stop" title="Остановить">■</button>
@@ -213,6 +218,8 @@
         <div class="meta-row">
           <button class="icon-btn glass-btn" id="btn-plus" title="Прикрепить папку проекта">+</button>
           <button class="glass-btn pill-btn sm" id="btn-history" title="История чатов">🕘 История</button>
+          <button class="glass-btn pill-btn sm screen-btn" id="btn-screen" title="Видение: приложить скриншот экрана к следующему сообщению (нужна модель с 👁)">📷 Экран</button>
+          <button class="glass-btn pill-btn sm screen-btn" id="btn-screen-live" title="Live-видение: автоматически прикладывать свежий микроскриншот к КАЖДОМУ сообщению">👁 Live</button>
           <div class="flex-sp"></div>
           <button class="glass-btn pill-btn model-badge" id="btn-model">
             <span id="model-name">…</span><span class="tier" id="model-tier">—</span>
@@ -270,9 +277,10 @@
 
     <!-- ПОПОВЕР: What's new -->
     <div class="pop glass hidden" id="pop-whats">
-      <div class="pop-head"><b>What's new · 1.0.2</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <div class="pop-head"><b>What's new · 1.0.3</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
       <ul class="whats-list">
-        <li><b>XRouter (xkiro.com) — 4-й провайдер</b> — 37 бесплатных моделей: Qwen, MiniMax, Mistral, SenseNova… Живой список с API, ключ XTROUTER_API_KEY.</li>
+        <li><b>👁 Видение экрана</b> — «📷 Экран» прикладывает скриншот к следующему сообщению, «👁 Live» — свежий микроскриншот к каждому. Модели с меткой 👁 видят изображение (у XRouter их 26 из 37 free). В чате остаётся метка 📷, сам кадр в историю не складывается.</li>
+        <li><b>XRouter (xkiro.com) — 4-й провайдер</b> — бесплатные модели: Qwen, MiniMax, Mistral, SenseNova, DeepSeek… Живой список с API, ключ XTROUTER_API_KEY.</li>
         <li><b>Маскот слушается</b> — вкл/выкл (мини + оверлей), анимация вкл/выкл, чим отдельно; мини-маскот <b>следит за мышкой глазами</b> (тело стоит на месте) и машет, когда курсор рядом.</li>
         <li><b>Оверлей «выкатывается»</b> — подкат из угла с наклоном, как шарик, затем машет и замеряет.</li>
         <li><b>История чатов</b> — клик открывает чат, 🗑 (появляется при наведении) удаляет чат в архив.</li>

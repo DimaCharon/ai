@@ -79,6 +79,12 @@ contextBridge.exposeInMainWorld("cc", {
     onDone: (cb) => on("term:done", cb),
   },
 
+  /* ---------- экран: микроскриншоты для «видения» ИИ ---------- */
+  screen: {
+    list: () => ipcRenderer.invoke("screen:list"),
+    capture: (opts) => ipcRenderer.invoke("screen:capture", opts),
+  },
+
   /* ---------- маскот ---------- */
   mascot: {
     /** main → renderer: оверлей показан, сыграй чим */

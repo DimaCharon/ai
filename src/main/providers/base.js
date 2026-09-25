@@ -31,9 +31,15 @@ class Provider {
     throw new ProviderError("not_implemented", "Метод check() не реализован");
   }
 
-  /** Список моделей: [{ id, name, free? }] */
+  /** Список моделей: [{ id, name, free?, vision? }] */
   async listModels() {
     return [];
+  }
+
+  /** Модель умеет видеть изображения (скриншоты)? По умолчанию — нет. */
+  supportsVision(modelId) {
+    void modelId;
+    return false;
   }
 
   /**

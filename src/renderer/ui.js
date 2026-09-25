@@ -214,7 +214,7 @@
     const sel = window.CC && window.CC.Chat.state.modelId === m.id && window.CC.Chat.state.providerId === provider;
     return `<div class="model-row${sel ? " active" : ""}" data-provider="${provider}" data-id="${m.id}">
       <span class="m-dot ${dot}"></span>
-      <div class="m-info"><b>${escHtml(m.name)}</b><small>${label}</small></div>
+      <div class="m-info"><b>${escHtml(m.name)}${m.vision ? '<span class="m-vision" title="Видит изображения — может смотреть скриншоты экрана"> 👁</span>' : ""}</b><small>${label}</small></div>
       <span class="m-tag${m.free ? " free" : ""}">${modelTag(m, provider)}</span>
       <button class="glass-btn pill-btn sm m-pick">${sel ? "выбрана" : "Выбрать"}</button>
     </div>`;
@@ -277,6 +277,15 @@
   /** Выбор модели (клик по строке в любом списке). */
   function selectModel(provider, id) {
     const st = window.CC.Chat.state;
+    // «видение» экрана: новая модель без vision → выключаем режим
+    if (st.screenMode) {
+      const g = modelsCache[provider] || [];
+      const m = g.find((x) => x.id === id);
+      if (!m || !m.vision) {
+        window.CC.Chat.setScreenMode(null);
+        toast("Режим «видение экрана» выключен: модель не видит изображения");
+      }
+    }
     st.providerId = provider;
     st.modelId = id;
     st.modelName = id;
@@ -667,7 +676,7 @@
      СТАРТ
      ============================================================ */
   window.CC = window.CC || {};
-  Object.assign(window.CC, { toast, confirm, showError, updateModelBadge: applyModelBadge, checkArenaSilent });
+  Object.assign(window.CC, { toast, confirm, showError, updateModelBadge: applyModelBadge, checkArenaSilent, models: modelsCache });
 
   (async () => {
     const st = await cc.auth.status();

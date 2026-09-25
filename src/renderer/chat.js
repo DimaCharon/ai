@@ -31,7 +31,74 @@
     hist: -1,
     currentBody: null, // msg-body, куда льётся стрим
     hasTokens: false,
+    screenMode: null, // null | "once" (следующее сообщ.) | "live" (каждое)
   };
+
+  const screenBtn = $("#btn-screen");
+  const screenLiveBtn = $("#btn-screen-live");
+
+  /* ---------- «видение» экрана: микроскриншоты ---------- */
+  function currentModelVision() {
+    const lists = (window.CC && window.CC.models) || {};
+    for (const k of Object.keys(lists)) {
+      const m = (lists[k] || []).find((x) => x.id === state.modelId);
+      if (m) return !!m.vision;
+    }
+    return false;
+  }
+  function showScreenPreview(url, caption) {
+    const box = $("#screen-preview");
+    const img = $("#screen-preview-img");
+    if (!box || !img) return;
+    if (url) img.src = url;
+    $("#screen-preview-cap").textContent = caption || "";
+    box.classList.remove("hidden");
+  }
+  function hideScreenPreview() {
+    const box = $("#screen-preview");
+    box && box.classList.add("hidden");
+  }
+  function updateScreenBtns() {
+    screenBtn && screenBtn.classList.toggle("active", state.screenMode === "once");
+    screenLiveBtn && screenLiveBtn.classList.toggle("active", state.screenMode === "live");
+  }
+  async function capturePreview() {
+    try {
+      const sc = await cc.screen.capture({});
+      if (sc.ok) {
+        showScreenPreview(sc.previewUrl, (sc.screen || "Экран") + " · " + sc.width + "×" + sc.height);
+        if (state.screenMode === "once") CC.toast("📷 Скриншот приложится к следующему сообщению");
+        if (state.screenMode === "live") CC.toast("👁 Live: к каждому сообщению будет прикладываться свежий микроскриншот");
+      } else {
+        CC.toast("Экран: " + sc.error);
+      }
+    } catch (e) {
+      CC.toast("Экран: " + String(e.message || e).slice(0, 90));
+    }
+  }
+  /** Вкл/выкл режим «видения» (вызывается и кнопками, и при смене модели). */
+  function setScreenMode(mode) {
+    state.screenMode = mode;
+    updateScreenBtns();
+    if (mode) capturePreview();
+    else hideScreenPreview();
+  }
+  if (screenBtn) screenBtn.addEventListener("click", () => {
+    if (state.screenMode === "once") { setScreenMode(null); return; }
+    if (!currentModelVision()) {
+      CC.toast("Эта модель не видит изображения — выбери модель с меткой 👁 (XRouter: Mistral Large 3, Qwen3 VL Plus, MiniMax M3…)");
+      return;
+    }
+    setScreenMode("once");
+  });
+  if (screenLiveBtn) screenLiveBtn.addEventListener("click", () => {
+    if (state.screenMode === "live") { setScreenMode(null); return; }
+    if (!currentModelVision()) {
+      CC.toast("Эта модель не видит изображения — выбери модель с меткой 👁 (XRouter: Mistral Large 3, Qwen3 VL Plus, MiniMax M3…)");
+      return;
+    }
+    setScreenMode("live");
+  });
 
   const esc = (s) =>
     String(s).replace(/[&<>"']/g, (c) =>
@@ -102,16 +169,35 @@
     state.snapshots = [];
 
     showChatView();
-    pushMsg("user", esc(text));
+    pushMsg("user", esc(text) + (state.screenMode ? '<span class="msg-screen-tag">📷 экран</span>' : ""));
     setBusy(true);
     state.currentBody = null;
     state.hasTokens = false;
+
+    /* «Видение»: свежий микроскриншот на момент отправки (реалтайм
+       в пределах формата чат-API — модель видит экран в эту секунду). */
+    let screen = null;
+    if (state.screenMode) {
+      try {
+        const sc = await cc.screen.capture({});
+        if (sc.ok) {
+          screen = { dataUrl: sc.dataUrl, width: sc.width, height: sc.height };
+          showScreenPreview(sc.previewUrl, (sc.screen || "Экран") + " · " + sc.width + "×" + sc.height);
+        } else {
+          CC.toast("Экран: " + sc.error + " — шлю без скриншота");
+        }
+      } catch (e) {
+        CC.toast("Экран: " + String(e.message || e).slice(0, 90) + " — шлю без скриншота");
+      }
+      if (state.screenMode === "once") setScreenMode(null);
+    }
 
     cc.chat.send({
       chatId: state.activeChatId,
       providerId: state.providerId,
       modelId: state.modelId,
       text,
+      screen,
     });
     // результат придёт событиями: chat:status / chat:token / chat:done / chat:error
   }
@@ -180,7 +266,9 @@
     messagesEl.innerHTML = "";
     for (const m of chat.messages) {
       if (m.role === "system") continue;
-      pushMsg(m.role === "user" ? "user" : "assistant", esc(m.content), chat.model);
+      pushMsg(m.role === "user" ? "user" : "assistant",
+        esc(m.content) + (m.screen ? '<span class="msg-screen-tag">📷 экран</span>' : ""),
+        chat.model);
     }
     showChatView();
     CC.updateModelBadge(chat.provider, chat.model);
@@ -207,5 +295,5 @@
   $("#btn-fwd").addEventListener("click", fwd);
 
   window.CC = window.CC || {};
-  Object.assign(window.CC, { Chat: { send, back, fwd, loadChat, newChat, state } });
+  Object.assign(window.CC, { Chat: { send, back, fwd, loadChat, newChat, state, setScreenMode } });
 })();

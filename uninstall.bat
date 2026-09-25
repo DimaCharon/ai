@@ -1,46 +1,45 @@
 @echo off
-chcp 65001 >nul
-title Полное удаление Charon Code
+setlocal
+title Charon Code - FULL REMOVAL
 echo ============================================================
-echo   CHARON CODE - ПОЛНОЕ УДАЛЕНИЕ
-echo   Стирает: программу, данные, аккаунты, ключи, автостарт
+echo   CHARON CODE - FULL REMOVAL
+echo   Removes: program, data, accounts, keys, autostart,
+echo   shortcuts and registry entries.
 echo ============================================================
 echo.
 
-REM --- 1. Завершаем процессы ---
+echo [1/5] Killing processes...
 taskkill /f /im "Charon Code.exe" >nul 2>&1
 taskkill /f /im "electron.exe" >nul 2>&1
-echo [1/5] Процесс завершён.
 
-REM --- 2. Каталог установки (NSIS / portable) ---
-if exist "%LOCALAPPDATA%\Programs\Charon Code\" (
+echo [2/5] Removing install folder...
+if exist "%LOCALAPPDATA%\Programs\Charon Code" (
   rmdir /s /q "%LOCALAPPDATA%\Programs\Charon Code"
-  echo [2/5] Каталог установки удалён: %LOCALAPPDATA%\Programs\Charon Code
+  echo     Removed: %LOCALAPPDATA%\Programs\Charon Code
 ) else (
-  echo [2/5] Каталог установки не найден (возможно, установлен в другое место).
+  echo     Not found. If you installed to another folder, remove it manually.
 )
 
-REM --- 3. ДАННЫЕ: аккаунты, ключи API, кука, чаты, настройки ---
+echo [3/5] Removing DATA: accounts, API keys, Arena cookie, chats, settings...
 if exist "%APPDATA%\Charon Code" (
   rmdir /s /q "%APPDATA%\Charon Code"
-  echo [3/5] Данные удалены: %APPDATA%\Charon Code
+  echo     Removed: %APPDATA%\Charon Code
 ) else (
-  echo [3/5] Данные не найдены.
+  echo     Not found.
 )
 
-REM --- 4. Ярлыки (Start Menu, рабочий стол) ---
-powershell -NoProfile -Command ^
-  "$paths = @([Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory')); " ^
-  "foreach ($p in $paths) { $l = Join-Path $p 'Charon Code.lnk'; if (Test-Path $l) { Remove-Item $l -Force; Write-Host ('Ярлык удалён: ' + $l) } }"
-echo [4/5] Ярлыки проверены.
+echo [4/5] Removing shortcuts...
+if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Charon Code" rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Charon Code"
+if exist "%USERPROFILE%\Desktop\Charon Code.lnk" del /q "%USERPROFILE%\Desktop\Charon Code.lnk"
+if exist "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Charon Code" rmdir /s /q "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Charon Code"
 
-REM --- 5. Реестр: запись о программе + автостарт (если был включён) ---
+echo [5/5] Cleaning registry: uninstall entry and autostart...
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Charon Code" /f >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "Charon Code" /f >nul 2>&1
-echo [5/5] Реестр очищен.
 
 echo.
 echo ============================================================
-echo   ГОТОВО. Charon Code полностью удалён с компьютера.
+echo   DONE. Charon Code is fully removed from this PC.
 echo ============================================================
 pause
+endlocal

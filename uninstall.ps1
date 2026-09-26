@@ -1,56 +1,79 @@
 # ============================================================
-#  Charon Code - FULL REMOVAL (PowerShell)
+#  Charon Code - FULL REMOVAL (PowerShell, v2)
 #  Run:  powershell -ExecutionPolicy Bypass -File uninstall.ps1
-#  Removes: program, data (accounts/keys/cookie/chats),
-#  shortcuts, registry entries and autostart.
+#  Finds the install folder via the registry (works with ANY
+#  install directory, e.g. D:\...\Charon Code), then removes:
+#  program, app data (accounts/keys/cookie/chats/cache),
+#  shortcuts and registry entries.
 # ============================================================
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "SilentlyContinue"
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  CHARON CODE - FULL REMOVAL" -ForegroundColor Cyan
+Write-Host "  CHARON CODE - FULL REMOVAL (v2)" -ForegroundColor Cyan
 Write-Host "============================================================"
 
 # 1. Processes
-Get-Process "Charon Code" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process | Where-Object { $_.ProcessName -like "Charon Code*" } | Stop-Process -Force
+Start-Sleep -Seconds 1
 Write-Host "[1/5] Processes stopped."
 
-# 2. Install folder (NSIS default: %LOCALAPPDATA%\Programs\Charon Code)
-$installDir = Join-Path $env:LOCALAPPDATA "Programs\Charon Code"
-if (Test-Path $installDir) {
-    Remove-Item $installDir -Recurse -Force
-    Write-Host "[2/5] Removed: $installDir"
-} else {
-    Write-Host "[2/5] Not found. If you installed to another folder, remove it manually."
-}
-
-# 3. DATA: accounts, API keys, Arena cookie, chats, settings
-$dataDir = Join-Path $env:APPDATA "Charon Code"
-if (Test-Path $dataDir) {
-    Remove-Item $dataDir -Recurse -Force
-    Write-Host "[3/5] Removed: $dataDir" -ForegroundColor Yellow
-} else {
-    Write-Host "[3/5] Not found."
-}
-
-# 4. Shortcuts
-$shortcutDirs = @(
-    [Environment]::GetFolderPath("Programs"),
-    [Environment]::GetFolderPath("Desktop"),
-    [Environment]::GetFolderPath("CommonDesktopDirectory")
-)
-foreach ($dir in $shortcutDirs) {
-    $lnk = Join-Path $dir "Charon Code.lnk"
-    if (Test-Path $lnk) {
-        Remove-Item $lnk -Force
-        Write-Host "Shortcut removed: $lnk"
+# 2. Find the install folder via the Uninstall registry keys
+$keys = @()
+foreach ($hive in @("HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+                    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall")) {
+    Get-ChildItem $hive | ForEach-Object {
+        if ($_.GetValue("DisplayName") -like "Charon Code*") { $keys += $_.PSPath }
     }
 }
-$smFolder = Join-Path ([Environment]::GetFolderPath("Programs")) "Charon Code"
-if (Test-Path $smFolder) { Remove-Item $smFolder -Recurse -Force; Write-Host "Start Menu folder removed: $smFolder" }
-Write-Host "[4/5] Shortcuts checked."
+$dirs = @()
+foreach ($k in $keys) {
+    $il = (Get-Item $k).GetValue("InstallLocation")
+    if ($il -and (Test-Path $il)) { $dirs += $il }
+}
+if ($dirs.Count -eq 0) {
+    $d0 = Join-Path $env:LOCALAPPDATA "Programs\Charon Code"
+    if (Test-Path $d0) { $dirs += $d0 }
+}
+if ($dirs.Count -eq 0) {
+    Write-Host "[2/5] Install folder: not found (already removed?)"
+} else {
+    foreach ($d in $dirs) {
+        Remove-Item $d -Recurse -Force
+        Write-Host "[2/5] Removed install: $d"
+    }
+}
 
-# 5. Registry
-Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Charon Code" -Recurse -ErrorAction SilentlyContinue
-Remove-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Charon Code" -ErrorAction SilentlyContinue
+# 3. App data on C: (accounts, API keys, Arena cookie, chats, settings, cache)
+$data = @()
+foreach ($p in @((Join-Path $env:APPDATA "Charon Code"),
+                 (Join-Path $env:LOCALAPPDATA "Charon Code"),
+                 (Join-Path $env:LOCALAPPDATA "charon-code"))) {
+    if (Test-Path $p) { Remove-Item $p -Recurse -Force; $data += $p }
+}
+if ($data.Count -eq 0) {
+    Write-Host "[3/5] App data on C:: not found"
+} else {
+    foreach ($p in $data) { Write-Host "[3/5] Removed data: $p" -ForegroundColor Yellow }
+}
+
+# 4. Shortcuts (Start Menu user + common, Desktop user + public)
+$sm  = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+$smc = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"
+foreach ($base in @($sm, $smc)) {
+    foreach ($t in @((Join-Path $base "Charon Code"), (Join-Path $base "Charon Code.lnk"))) {
+        if (Test-Path $t) { Remove-Item $t -Recurse -Force; Write-Host "[4/5] Removed: $t" }
+    }
+}
+foreach ($dd in @((Join-Path $env:USERPROFILE "Desktop"), (Join-Path $env:PUBLIC "Desktop"))) {
+    $l = Join-Path $dd "Charon Code.lnk"
+    if (Test-Path $l) { Remove-Item $l -Force; Write-Host "[4/5] Removed: $l" }
+}
+
+# 5. Registry (uninstall entry + autostart)
+foreach ($k in $keys) {
+    Remove-Item $k -Recurse
+    Write-Host "[5/5] Removed registry key: $k"
+}
+Remove-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Charon Code"
 Write-Host "[5/5] Registry cleaned."
 
 Write-Host ""

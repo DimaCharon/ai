@@ -23,6 +23,7 @@ const { Dahl } = require("./providers/dahl");
 const { Arena } = require("./providers/arena");
 const { Xkiro } = require("./providers/xkiro");
 const { ProviderError } = require("./providers/base");
+const council = require("./council");
 
 const MAX_ATTEMPTS = 10;
 const ATTEMPT_TIMEOUT_MS = 90000; // таймаут одной попытки
@@ -199,7 +200,7 @@ async function sendChat(win, payload, signal) {
     } catch { /* локальный режим — не фатально */ }
     store.saveChat(chat);
   }
-  chat.messages.push({ role: "user", content: text, at: Date.now(), screen: !!screenData });
+  chat.messages.push({ role: "user", content: text, at: Date.now(), screen: !!screenData, code: !!payload.codeMode });
   if (screenIn && !screenData) {
     emit.status({ text: "Модель " + modelId + " не видит изображения — шлю без скриншота. Выбери модель с меткой 👁 (XRouter/OpenRouter)." });
   }
@@ -240,25 +241,65 @@ async function sendChat(win, payload, signal) {
   };
 
   stopControllers.set(chatId, signal);
-  const res = await runRequest(provider, {
-    model: modelId,
-    messages: buildProviderMessages(chat.messages),
-    signal,
-    chatId: chat.remoteId || undefined,
-    onToken: (t) => emit.token(t),
-    onStatus: (s) => emit.status(s),
-  });
+
+  let finalText = "";
+  let attempts = 1;
+  let councilMembers = null;
+
+  if (payload.codeMode) {
+    /* ============ CODE-РЕЖИМ ============
+       Совет самых мощных бесплатных моделей (XRouter free) думает
+       параллельно → судья сводит всё в ОДИН вывод. Не зависит от
+       выбранной в UI модели — совет собирается из живого free-списка. */
+    const xk = providers.xkiro;
+    try { await xk.check(); } catch (err) {
+      stopControllers.delete(chatId);
+      emit.error({
+        code: err.code || "council",
+        message: "Code-режим: " + err.message,
+        retryable: ["no_key", "network"].includes(err.code),
+      });
+      return chat;
+    }
+    try {
+      const out = await council.runCouncil(xk, {
+        messages: buildProviderMessages(chat.messages),
+        signal,
+        onStatus: (s) => emit.status(s),
+        onToken: (t) => emit.token(t),
+        onCouncil: (members) => safeSend(win, "chat:council", { chatId, members }),
+      });
+      finalText = out.finalText;
+      councilMembers = out.members;
+    } catch (err) {
+      stopControllers.delete(chatId);
+      if (signal && signal.aborted) { emit.status({ text: "Остановлено пользователем" }); return chat; }
+      emit.error({ code: "council", message: String(err.message || err).slice(0, 300), retryable: true });
+      return chat;
+    }
+  } else {
+    const res = await runRequest(provider, {
+      model: modelId,
+      messages: buildProviderMessages(chat.messages),
+      signal,
+      chatId: chat.remoteId || undefined,
+      onToken: (t) => emit.token(t),
+      onStatus: (s) => emit.status(s),
+    });
+    if (!res.ok) {
+      stopControllers.delete(chatId);
+      if (res.aborted) { emit.status({ text: "Остановлено пользователем" }); return chat; }
+      emit.error({ code: res.code, message: res.message, retryable: true });
+      return chat;
+    }
+    finalText = res.text;
+    attempts = res.attempts;
+  }
   stopControllers.delete(chatId);
 
-  if (!res.ok) {
-    if (res.aborted) { emit.status({ text: "Остановлено пользователем" }); return chat; }
-    emit.error({ code: res.code, message: res.message, retryable: true });
-    return chat;
-  }
-
-  chat.messages.push({ role: "assistant", content: res.text, at: Date.now() });
+  chat.messages.push({ role: "assistant", content: finalText, at: Date.now(), council: councilMembers || undefined });
   store.saveChat(chat);
-  emit.done({ text: res.text, attempts: res.attempts, migratedFrom, chatId, providerId, modelId });
+  emit.done({ text: finalText, attempts, migratedFrom, chatId, providerId, modelId, codeMode: !!payload.codeMode, council: councilMembers || undefined });
   return chat;
 }
 

@@ -106,7 +106,10 @@ const DEFAULT_SETTINGS = {
     dahl: "",          // ключ inference.dahl.global
     arenaCookie: "",   // сессионная кука Arena AI (arena.ai)
     xkiro: "",         // XTROUTER_API_KEY (api.xkiro.com)
+    github: "",        // GitHub Personal Access Token (коннектор)
+    gitlab: "",        // GitLab Access Token (коннектор)
   },
+  connectors: {},      // конфиги коннекторов: { github: {token}, googledrive: {...} }
   model: {
     provider: "openrouter", // openrouter | dahl | arena | xkiro
     id: "qwen/qwen3.8-27b:free", // актуальная free-модель (список живой в UI)
@@ -126,6 +129,7 @@ function getSettings() {
     ...s,
     keys: { ...DEFAULT_SETTINGS.keys, ...(s.keys || {}) },
     model: { ...DEFAULT_SETTINGS.model, ...(s.model || {}) },
+    connectors: { ...(s.connectors || {}) },
   };
 }
 function saveSettings(patch) {

@@ -608,6 +608,92 @@ select.f-input { cursor: pointer; }
 .toast.in { opacity: 1; transform: translateY(0); }
 
 /* ============================================================
+   КОННЕКТОРЫ (GitHub / GitLab / Google Drive)
+   ============================================================ */
+.conn-intro { font-size: 11.5px; line-height: 1.5; color: var(--mut); margin-bottom: 12px; }
+.conn-intro b { color: var(--tx); font-weight: 700; }
+.conn-card {
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 14px; padding: 12px 14px; margin-bottom: 12px;
+  background: rgba(255,255,255,.03);
+}
+.conn-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.conn-ico { font-size: 22px; }
+.conn-tt { flex: 1; display: flex; flex-direction: column; line-height: 1.25; }
+.conn-tt b { font-size: 13.5px; font-weight: 750; }
+.conn-tt small { font-size: 10.5px; color: var(--mut2); }
+.conn-status { font-size: 11px; font-weight: 650; color: var(--mut2); padding: 3px 9px; border-radius: 9px; background: rgba(255,255,255,.05); white-space: nowrap; }
+.conn-status.ok { color: #57e39a; background: rgba(87,227,154,.12); }
+.conn-setup { display: flex; flex-direction: column; gap: 6px; }
+.conn-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+.conn-toolbar select { flex: 1; }
+.conn-files {
+  max-height: 180px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid rgba(255,255,255,.07); border-radius: 10px; padding: 6px;
+  background: rgba(0,0,0,.18);
+}
+.conn-fitem {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 8px; border: none; border-radius: 8px;
+  background: transparent; color: var(--tx);
+  font: 500 12px "Inter", "Segoe UI", system-ui, sans-serif; text-align: left; cursor: pointer;
+  transition: background .15s;
+}
+.conn-fitem:hover { background: rgba(255,255,255,.07); }
+.conn-fitem .fi-size { margin-left: auto; font-size: 10px; color: var(--mut2); }
+.conn-file-actions { margin-top: 10px; }
+.conn-preview {
+  max-height: 130px; overflow: auto;
+  font: 500 11px var(--mono); line-height: 1.45; color: #c4cddd;
+  background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.07);
+  border-radius: 9px; padding: 8px 10px; margin: 6px 0;
+  white-space: pre-wrap; word-break: break-word;
+}
+.conn-btns { display: flex; gap: 7px; flex-wrap: wrap; }
+
+/* ============================================================
+   CODE-РЕЖИМ (совет моделей)
+   ============================================================ */
+.code-btn { font-weight: 750; }
+.code-btn.active {
+  background: linear-gradient(135deg, rgba(255,153,51,.28), rgba(147,112,219,.28));
+  border-color: rgba(255,153,51,.55);
+  color: #ffd9b0;
+  box-shadow: 0 0 16px rgba(255,153,51,.25);
+}
+.msg-code-tag {
+  display: inline-block; margin-left: 8px; padding: 1px 7px;
+  border-radius: 8px; font-size: 10px; font-weight: 700;
+  color: #ffc79a; background: rgba(255,153,51,.16);
+  border: 1px solid rgba(255,153,51,.3);
+  vertical-align: middle;
+}
+.council-details { margin: 0 0 10px; }
+.council-details summary {
+  cursor: pointer; font-size: 11px; font-weight: 700;
+  color: #ffc79a; user-select: none;
+  padding: 5px 10px; border-radius: 9px;
+  background: rgba(255,153,51,.09); border: 1px solid rgba(255,153,51,.22);
+  list-style: none;
+}
+.council-details summary::-webkit-details-marker { display: none; }
+.council-details[open] summary { margin-bottom: 8px; }
+.council-member {
+  margin-bottom: 8px; padding: 8px 10px;
+  border-radius: 9px; background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.07);
+}
+.council-member b { font-size: 11px; font-weight: 700; color: #a8b3c7; display: block; margin-bottom: 4px; }
+.council-member pre {
+  font: 500 11px var(--mono); line-height: 1.45; color: #c4cddd;
+  white-space: pre-wrap; word-break: break-word; margin: 0;
+  max-height: 200px; overflow-y: auto;
+}
+.council-member.failed { opacity: .75; }
+.cm-err { font-size: 11px; color: #ff8d7a; }
+
+/* ============================================================
    АДАПТИВ
    ============================================================ */
 @media (max-width: 980px) {

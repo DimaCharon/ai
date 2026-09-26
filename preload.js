@@ -59,6 +59,15 @@ contextBridge.exposeInMainWorld("cc", {
     onStatus: (cb) => on("chat:status", cb),
     onDone: (cb) => on("chat:done", cb),
     onError: (cb) => on("chat:error", cb),
+    onCouncil: (cb) => on("chat:council", cb),
+  },
+
+  /* ---------- коннекторы (GitHub / GitLab / Google Drive / …) ---------- */
+  connectors: {
+    list: () => ipcRenderer.invoke("connectors:list"),
+    check: (id) => ipcRenderer.invoke("connectors:check", id),
+    saveToken: (id, token) => ipcRenderer.invoke("connectors:saveToken", id, token),
+    action: (id, name, params) => ipcRenderer.invoke("connectors:action", id, name, params || []),
   },
 
   /* ---------- файлы ---------- */

@@ -30,7 +30,7 @@
   ];
   const W = 13, H = 8, CW = 13; // канвас = размер спрайта
   const EYE_TOP = [[3, 2], [9, 2]]; // верх глаз (закрывается при мигании)
-  const COLORS = { body: "#d97757", eye: "#ffffff" };
+  const COLORS = { body: "#d97757", eye: "#201410" }; // глаза — чёрные (по требованию)
 
   function frame(mutate) {
     const g = SPRITE.map((r) => r.split(""));

@@ -32,6 +32,9 @@
     currentBody: null, // msg-body, куда льётся стрим
     hasTokens: false,
     screenMode: null, // null | "once" (следующее сообщ.) | "live" (каждое)
+    codeMode: false,  // 🧠 Code-режим: совет моделей → 1 вывод
+    label: null,      // подпись для текущих assistant-сообщений
+    council: null,    // ответы совета (приходят событием chat:council)
   };
 
   const screenBtn = $("#btn-screen");
@@ -160,10 +163,14 @@
     state.snapshots = [];
 
     showChatView();
-    pushMsg("user", esc(text) + (state.screenMode ? '<span class="msg-screen-tag">📷 экран</span>' : ""));
+    pushMsg("user", esc(text) +
+      (state.screenMode ? '<span class="msg-screen-tag">📷 экран</span>' : "") +
+      (state.codeMode ? '<span class="msg-code-tag">🧠 Code</span>' : ""));
     setBusy(true);
     state.currentBody = null;
     state.hasTokens = false;
+    state.council = null;
+    state.label = state.codeMode ? "Code-совет · xkiro free" : state.modelName;
 
     /* «Видение»: свежий микроскриншот на момент отправки (реалтайм
        в пределах формата чат-API — модель видит экран в эту секунду). */
@@ -189,8 +196,37 @@
       modelId: state.modelId,
       text,
       screen,
+      codeMode: state.codeMode,
     });
-    // результат придёт событиями: chat:status / chat:token / chat:done / chat:error
+    // результат придёт событиями: chat:status / chat:token / chat:council / chat:done / chat:error
+  }
+
+  /* ---------- 🧠 Code-режим: совет моделей ---------- */
+  const codeBtn = $("#btn-code");
+  if (codeBtn) codeBtn.addEventListener("click", () => {
+    state.codeMode = !state.codeMode;
+    codeBtn.classList.toggle("active", state.codeMode);
+    if (state.codeMode) {
+      CC.toast("🧠 Code-режим: совет самых мощных бесплатных моделей (XRouter free) → один вывод", 3600);
+    } else {
+      CC.toast("Code-режим выключен — отвечает одна выбранная модель");
+    }
+  });
+
+  /** Свёртка с отдельными ответами моделей совета. */
+  function insertCouncilBlock(body, members) {
+    const d = document.createElement("details");
+    d.className = "council-details";
+    const okCount = members.filter((m) => m.ok).length;
+    d.innerHTML = `<summary>🧠 Code: отдельные ответы моделей (${okCount}/${members.length})</summary>`;
+    for (const m of members) {
+      const div = document.createElement("div");
+      div.className = "council-member" + (m.ok ? "" : " failed");
+      div.innerHTML = `<b>${esc(m.id)}</b>` +
+        (m.ok ? `<pre>${esc(m.text)}</pre>` : `<span class="cm-err">— ${esc(m.error || "не ответила")}</span>`);
+      d.appendChild(div);
+    }
+    body.prepend(d);
   }
 
   /* ---------- события от main ---------- */
@@ -204,10 +240,15 @@
     if (text) showStatus(esc(text));
   });
 
+  cc.chat.onCouncil(({ chatId, members }) => {
+    if (chatId) state.activeChatId = chatId;
+    state.council = members; // показываем в onDone, когда финал уже на месте
+  });
+
   cc.chat.onToken(({ chatId, text }) => {
     if (chatId) state.activeChatId = chatId;
     hideStatus();
-    if (!state.currentBody) state.currentBody = pushMsg("assistant", "", state.modelName);
+    if (!state.currentBody) state.currentBody = pushMsg("assistant", "", state.label || state.modelName);
     state.hasTokens = true;
     // ВАЖНО: вставляем текст НОВОЙ текстовой нодрой ПЕРЕД кареткой.
     // (Было: currentBody.textContent += text — чтение textContent
@@ -223,10 +264,15 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   });
 
-  cc.chat.onDone(({ chatId, attempts, migratedFrom }) => {
+  cc.chat.onDone(({ chatId, attempts, migratedFrom, council: councilDone }) => {
     if (chatId) state.activeChatId = chatId;
     const caret = state.currentBody && state.currentBody.querySelector(".caret");
     if (caret) caret.remove();
+    // Code-режим: показываем отдельные ответы моделей свёрткой над финалом
+    if (state.currentBody && (councilDone || state.council)) {
+      insertCouncilBlock(state.currentBody, councilDone || state.council);
+    }
+    state.council = null;
     hideStatus();
     setBusy(false);
     commitSnapshot();
@@ -259,9 +305,14 @@
     messagesEl.innerHTML = "";
     for (const m of chat.messages) {
       if (m.role === "system") continue;
-      pushMsg(m.role === "user" ? "user" : "assistant",
-        esc(m.content) + (m.screen ? '<span class="msg-screen-tag">📷 экран</span>' : ""),
-        chat.model);
+      if (m.role === "user") {
+        pushMsg("user", esc(m.content) +
+          (m.screen ? '<span class="msg-screen-tag">📷 экран</span>' : "") +
+          (m.code ? '<span class="msg-code-tag">🧠 Code</span>' : ""), chat.model);
+      } else {
+        const body = pushMsg("assistant", esc(m.content), chat.model);
+        if (m.council && m.council.length) insertCouncilBlock(body, m.council);
+      }
     }
     showChatView();
     CC.updateModelBadge(chat.provider, chat.model);

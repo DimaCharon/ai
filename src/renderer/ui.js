@@ -406,6 +406,8 @@
       $("#key-dahl").value = s.keys.dahl || "";
       $("#key-arena").value = s.keys.arenaCookie || "";
       $("#key-xkiro").value = s.keys.xkiro || "";
+      $("#key-github").value = s.keys.github || "";
+      $("#key-gitlab").value = s.keys.gitlab || "";
       $("#set-arena-limit").value = s.arenaLimit;
       $("#set-mascot").checked = s.mascotShow !== false;
       $("#set-mascot-anim").checked = s.mascotAnim !== false;
@@ -421,6 +423,8 @@
         dahl: $("#key-dahl").value.trim(),
         arenaCookie: $("#key-arena").value.trim(),
         xkiro: $("#key-xkiro").value.trim(),
+        github: $("#key-github").value.trim(),
+        gitlab: $("#key-gitlab").value.trim(),
       },
       arenaLimit: Math.max(4, Number($("#set-arena-limit").value) || 30),
       mascotShow: $("#set-mascot").checked,
@@ -454,14 +458,19 @@
     drawer.classList.remove("hidden");
     $("#pane-files").classList.toggle("hidden", pane !== "files");
     $("#pane-term").classList.toggle("hidden", pane !== "term");
+    $("#pane-conn").classList.toggle("hidden", pane !== "conn");
     $("#dt-files").classList.toggle("active", pane === "files");
     $("#dt-term").classList.toggle("active", pane === "term");
+    $("#dt-conn").classList.toggle("active", pane === "conn");
     if (pane === "files" && !Files.dir) Files.loadDir();
+    if (pane === "conn") openConnPane();
   }
   $("#btn-files").addEventListener("click", () => openDrawer("files"));
   $("#btn-term").addEventListener("click", () => openDrawer("term"));
+  $("#btn-conn").addEventListener("click", () => openDrawer("conn"));
   $("#dt-files").addEventListener("click", () => openDrawer("files"));
   $("#dt-term").addEventListener("click", () => openDrawer("term"));
+  $("#dt-conn").addEventListener("click", () => openDrawer("conn"));
   $("#dt-close").addEventListener("click", () => drawer.classList.add("hidden"));
 
   /* ---------- Файлы ---------- */
@@ -581,6 +590,212 @@
     Term.runId = null;
     Term.append(error ? "Ошибка: " + error + "\n" : "\n[завершено, код: " + code + "]\n");
   });
+
+  /* ============================================================
+     КОННЕКТОРЫ: GitHub / GitLab / Google Drive
+     ============================================================ */
+  /** Текущая «папка проекта»: активный чип → папка файлов → HOME. */
+  function projectDir() {
+    const chip = $("#chips .chip.active");
+    if (chip && chip.dataset.path) return chip.dataset.path;
+    if (Files.dir) return Files.dir;
+    return undefined;
+  }
+
+  function setStatus(prefix, r) {
+    const el = $("#" + prefix + "-status");
+    if (r.ok) {
+      el.textContent = "✓ " + (r.info || "подключён");
+      el.title = r.info || "";
+      el.classList.add("ok");
+    } else {
+      el.textContent = r.needsSetup ? "⚙ настройка" : "✗";
+      el.title = r.error || "";
+      el.classList.remove("ok");
+    }
+  }
+
+  /**
+   * Фабрика для git-коннекторов (GitHub и GitLab).
+   * prefix = "gh" | "gl", cid = "github" | "gitlab".
+   */
+  function gitConn(prefix, cid) {
+    const connectBtn = $("#" + prefix + "-connect");
+    const setupEl = document.querySelector(`#conn-${cid} .conn-setup`);
+    const activeEl = $("#" + prefix + "-active");
+    const repoSel = $("#" + prefix + "-repo");
+    const filesEl = $("#" + prefix + "-files");
+    const actionsEl = $("#" + prefix + "-actions");
+    const st = { repos: [], repo: null, branch: null, path: "", file: null, opened: false };
+
+    const noun = cid === "github" ? "репозиторий" : "проект";
+
+    async function enterConnected() {
+      if (st.opened) return;
+      st.opened = true;
+      setupEl.classList.add("hidden");
+      activeEl.classList.remove("hidden");
+      loadRepos();
+    }
+
+    async function loadRepos() {
+      repoSel.innerHTML = `<option value="">Загрузка…</option>`;
+      const r = await cc.connectors.action(cid, "listRepos", []);
+      if (!r.ok) { CC.showError(r.error, true, loadRepos); return; }
+      st.repos = r.data;
+      repoSel.innerHTML = `<option value="">— Выбери ${noun} —</option>` +
+        r.data.map((x, i) =>
+          `<option value="${i}">${x.private ? "🔒 " : ""}${escHtml(x.full_name)}</option>`).join("");
+      st.repo = null; st.branch = null; st.path = ""; st.file = null;
+      filesEl.innerHTML = `<div class="empty">Выбери ${noun} сверху</div>`;
+      actionsEl.classList.add("hidden");
+    }
+
+    function currentRepo() {
+      const i = Number(repoSel.value);
+      return st.repos[i] || null;
+    }
+
+    repoSel.addEventListener("change", () => {
+      const r = currentRepo();
+      if (!r) { st.repo = null; filesEl.innerHTML = `<div class="empty">Выбери ${noun} сверху</div>`; actionsEl.classList.add("hidden"); return; }
+      st.repo = r.full_name;
+      st.branch = r.default_branch || "";
+      st.path = "";
+      st.file = null;
+      loadDir("");
+    });
+
+    async function loadDir(p) {
+      st.path = p;
+      filesEl.innerHTML = `<div class="empty">Загрузка…</div>`;
+      actionsEl.classList.add("hidden");
+      const r = await cc.connectors.action(cid, "listDir", [st.repo, p, st.branch]);
+      if (!r.ok) { filesEl.innerHTML = `<div class="empty">⚠ ${escHtml(r.error)}</div>`; return; }
+      let html = "";
+      if (p) html += `<button class="conn-fitem dir" data-path="">📂 ..</button>`;
+      const dirs = r.data.filter((x) => x.type === "tree" || x.type === "dir");
+      const files = r.data.filter((x) => x.type === "blob" || x.type === "file");
+      html += dirs.map((x) => `<button class="conn-fitem dir" data-path="${escHtml(x.path)}">📂 ${escHtml(x.name)}</button>`).join("");
+      html += files.map((x) => `<button class="conn-fitem" data-path="${escHtml(x.path)}">📄 ${escHtml(x.name)}<span class="fi-size">${fmtSize(x.size)}</span></button>`).join("");
+      if (!r.data.length) html += `<div class="empty">Пустая папка</div>`;
+      filesEl.innerHTML = html;
+      $$("#" + prefix + "-files .conn-fitem").forEach((b) => b.addEventListener("click", () => openItem(b.dataset.path)));
+    }
+
+    async function openItem(p) {
+      const r = await cc.connectors.action(cid, "listDir", [st.repo, p, st.branch]);
+      if (r.ok) { loadDir(p); return; } // это каталог
+      // файл
+      const f = await cc.connectors.action(cid, "readFile", [st.repo, p]);
+      if (!f.ok) { toast("Не удалось прочитать: " + (f.error || "")); return; }
+      st.file = f.data;
+      $("#" + prefix + "-file-name").textContent = p + (f.data.truncated ? " (показаны первые 300 КБ)" : "");
+      const prev = $("#" + prefix + "-preview");
+      prev.textContent = f.data.text;
+      actionsEl.classList.remove("hidden");
+      actionsEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    connectBtn.addEventListener("click", async () => {
+      connectBtn.disabled = true;
+      connectBtn.textContent = "Подключаю…";
+      const r = await cc.connectors.saveToken(cid, $("#" + prefix + "-token").value.trim());
+      connectBtn.disabled = false;
+      connectBtn.textContent = "Подключить " + (cid === "github" ? "GitHub" : "GitLab");
+      if (r.ok) {
+        setStatus(prefix, r);
+        toast((cid === "github" ? "GitHub" : "GitLab") + " подключён: " + (r.info || ""));
+        enterConnected();
+      } else {
+        setStatus(prefix, r);
+        CC.showError(r.error, true, () => connectBtn.click());
+      }
+    });
+    // Enter в поле токена = подключить
+    $("#" + prefix + "-token").addEventListener("keydown", (e) => { if (e.key === "Enter") connectBtn.click(); });
+
+    $("#" + prefix + "-refresh").addEventListener("click", loadRepos);
+
+    /* 💬 В чат — файл улетает модели в контекст (остаётся в истории) */
+    $("#" + prefix + "-to-chat").addEventListener("click", () => {
+      if (!st.file) return;
+      const raw =
+        `📄 Файл из ${cid}: ${st.repo}/${st.file.path}\n\n` +
+        "```\n" + st.file.text + "\n```\n\n" +
+        "Изучи этот файл и будь готов отвечать на вопросы о нём.";
+      closePops();
+      drawer.classList.add("hidden");
+      CC.Chat.send(raw);
+      toast("Файл отправлен в чат — спрашивай о нём что угодно");
+    });
+
+    /* 💾 В папку проекта */
+    $("#" + prefix + "-save-file").addEventListener("click", async () => {
+      if (!st.file) return;
+      const dir = projectDir();
+      const ok = await confirm(
+        "Сохранить файл в папку проекта?",
+        "Файл: " + st.repo + "/" + st.file.path + "\nВ папку: " + (dir || "(домашняя)") + "\n\nЕсли файл с таким именем уже есть — сохранится как «имя (1).…»",
+        "Сохранить"
+      );
+      if (!ok) return;
+      const r = await cc.connectors.action(cid, "saveFile", [st.file.path, st.file.text, dir]);
+      toast(r.ok ? "Сохранено: " + r.dir : "Ошибка: " + r.error, 3600);
+    });
+
+    /* 📦 Скачать весь репозиторий/проект */
+    $("#" + prefix + "-dl-repo").addEventListener("click", async () => {
+      const r = currentRepo();
+      if (!r) return;
+      const dir = projectDir();
+      const ok = await confirm(
+        "Скачать весь " + noun + "?",
+        r.full_name + " (ветка: " + (st.branch || "main") + ")\nВ папку: " + (dir || "(домашняя)") + "\\" + r.name + "\n\nХвост: до 500 МБ, может занять время.",
+        "Скачать"
+      );
+      if (!ok) return;
+      toast("Скачиваю " + r.full_name + "…", 4000);
+      const res = await cc.connectors.action(cid, "downloadRepo", [r.full_name, r.default_branch || st.branch, dir]);
+      if (res.ok) toast("Готово: " + res.dir + " (" + res.files + " файлов)", 5000);
+      else CC.showError(res.error, true, () => $("#" + prefix + "-dl-repo").click());
+    });
+
+    return {
+      /** автопроверка при открытии вкладки */
+      async autocheck() {
+        const s = await cc.settings.get();
+        const hasToken = !!(s.keys && s.keys[cid]);
+        if (hasToken) {
+          $("#" + prefix + "-token").value = s.keys[cid] || "";
+          const r = await cc.connectors.check(cid);
+          setStatus(prefix, r);
+          if (r.ok) enterConnected();
+        } else {
+          setStatus(prefix, { ok: false, error: "не подключён" });
+        }
+      },
+    };
+  }
+
+  const Gh = gitConn("gh", "github");
+  const Gl = gitConn("gl", "gitlab");
+
+  /* Google Drive: инструкция по OAuth */
+  $("#gd-info").addEventListener("click", async () => {
+    const r = await cc.connectors.check("googledrive");
+    CC.showError(r.error || "Нужна настройка OAuth", false, null);
+  });
+
+  /* ---------- вкладка «Коннекторы» ---------- */
+  let connLoaded = false;
+  function openConnPane() {
+    if (!connLoaded) {
+      connLoaded = true;
+      Gh.autocheck();
+      Gl.autocheck();
+    }
+  }
 
   /* ============================================================
      ПАПКИ-ЧИПЫ (проектные папки)

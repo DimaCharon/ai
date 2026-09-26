@@ -52,6 +52,7 @@
         <div class="win-tools-right">
           <button class="glass-btn pill-btn" id="btn-files" title="Файлы проекта">📁 <span class="btn-label">Файлы</span></button>
           <button class="glass-btn pill-btn" id="btn-term" title="Терминал (CMD / PowerShell)">❯_ <span class="btn-label">Терминал</span></button>
+          <button class="glass-btn pill-btn" id="btn-conn" title="Коннекторы: GitHub, GitLab, Google Drive">🔌 <span class="btn-label">Коннекторы</span></button>
         </div>
 
         <div class="titlebar-right">
@@ -133,6 +134,7 @@
         <div class="drawer-head">
           <button class="drawer-tab glass-btn" id="dt-files" title="Файлы">📁 Файлы</button>
           <button class="drawer-tab glass-btn" id="dt-term" title="Терминал">❯_ Терминал</button>
+          <button class="drawer-tab glass-btn" id="dt-conn" title="Коннекторы">🔌 Коннекторы</button>
           <div class="flex-sp"></div>
           <button class="icon-btn glass-btn" id="dt-close" title="Скрыть панель">×</button>
         </div>
@@ -176,6 +178,88 @@
             <button class="glass-btn pill-btn" id="term-clear">Очистить</button>
           </div>
         </div>
+
+        <!-- Панель коннекторов -->
+        <div class="drawer-pane hidden" id="pane-conn">
+          <div class="conn-intro">
+            <b>Коннекторы</b> — подтягивают внешний код и файлы прямо в Charon:
+            репозитории из GitHub/GitLab, файлы из облака. Подключи токен —
+            дальше выбор репо → файл → «в чат» / «в папку проекта».
+          </div>
+
+          <!-- GitHub -->
+          <div class="conn-card" id="conn-github">
+            <div class="conn-head">
+              <span class="conn-ico">🐙</span>
+              <div class="conn-tt"><b>GitHub</b><small>репозитории, файлы кода</small></div>
+              <span class="conn-status" id="gh-status">—</span>
+            </div>
+            <div class="conn-setup">
+              <input class="f-input" id="gh-token" type="password" placeholder="GitHub токен (PAT): ghp_… / github_pat_…" spellcheck="false">
+              <p class="f-hint small">github.com → Settings → Developer settings → Personal access tokens → <b>repo</b> scope. Ключ хранится только на этом ПК.</p>
+              <button class="glass-btn pill-btn primary" id="gh-connect">Подключить GitHub</button>
+            </div>
+            <div class="conn-active hidden" id="gh-active">
+              <div class="conn-toolbar">
+                <select class="f-input" id="gh-repo" title="Репозиторий"></select>
+                <button class="glass-btn pill-btn sm" id="gh-refresh" title="Обновить список репозиториев">↻</button>
+              </div>
+              <div class="conn-files" id="gh-files"></div>
+              <div class="conn-file-actions hidden" id="gh-actions">
+                <span class="f-hint small" id="gh-file-name"></span>
+                <pre class="conn-preview" id="gh-preview"></pre>
+                <div class="conn-btns">
+                  <button class="glass-btn pill-btn sm" id="gh-to-chat">💬 В чат</button>
+                  <button class="glass-btn pill-btn sm" id="gh-save-file">💾 В папку проекта</button>
+                  <button class="glass-btn pill-btn sm" id="gh-dl-repo">📦 Скачать весь репо</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- GitLab -->
+          <div class="conn-card" id="conn-gitlab">
+            <div class="conn-head">
+              <span class="conn-ico">🦊</span>
+              <div class="conn-tt"><b>GitLab</b><small>проекты, файлы кода</small></div>
+              <span class="conn-status" id="gl-status">—</span>
+            </div>
+            <div class="conn-setup">
+              <input class="f-input" id="gl-token" type="password" placeholder="GitLab Access Token (scope: read_api)" spellcheck="false">
+              <p class="f-hint small">gitlab.com → Preferences → Access Tokens → <b>read_api</b>.</p>
+              <button class="glass-btn pill-btn primary" id="gl-connect">Подключить GitLab</button>
+            </div>
+            <div class="conn-active hidden" id="gl-active">
+              <div class="conn-toolbar">
+                <select class="f-input" id="gl-repo" title="Проект"></select>
+                <button class="glass-btn pill-btn sm" id="gl-refresh" title="Обновить список проектов">↻</button>
+              </div>
+              <div class="conn-files" id="gl-files"></div>
+              <div class="conn-file-actions hidden" id="gl-actions">
+                <span class="f-hint small" id="gl-file-name"></span>
+                <pre class="conn-preview" id="gl-preview"></pre>
+                <div class="conn-btns">
+                  <button class="glass-btn pill-btn sm" id="gl-to-chat">💬 В чат</button>
+                  <button class="glass-btn pill-btn sm" id="gl-save-file">💾 В папку проекта</button>
+                  <button class="glass-btn pill-btn sm" id="gl-dl-repo">📦 Скачать весь проект</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Google Drive -->
+          <div class="conn-card" id="conn-drive">
+            <div class="conn-head">
+              <span class="conn-ico">📁</span>
+              <div class="conn-tt"><b>Google Drive</b><small>файлы облака Google</small></div>
+              <span class="conn-status" id="gd-status">⚙ настройка</span>
+            </div>
+            <div class="conn-setup">
+              <p class="f-hint small" id="gd-note">Нужно OAuth-приложение на твоё имя (политика Google — без него доступ не выдаётся). 1) console.cloud.google.com → проект → включить Drive API; 2) ID клиента OAuth «Десктоп»; 3) refresh token. Принеси эти три вещи — подключим полностью.</p>
+              <button class="glass-btn pill-btn" id="gd-info">Как подключить (пошагово)</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ЗОНА ВВОДА -->
@@ -215,6 +299,7 @@
           <button class="glass-btn pill-btn sm screen-btn" id="btn-screen" title="Видение: приложить скриншот экрана к следующему сообщению (нужна модель с 👁)">📷 Экран</button>
           <button class="glass-btn pill-btn sm screen-btn" id="btn-screen-live" title="Live-видение: автоматически прикладывать свежий микроскриншот к КАЖДОМУ сообщению">👁 Live</button>
           <div class="flex-sp"></div>
+          <button class="glass-btn pill-btn sm code-btn" id="btn-code" title="Code-режим: самые мощные БЕСПЛАТНЫЕ модели думают вместе и приходят к одному выводу (нужен ключ XRouter)">🧠 Code</button>
           <button class="glass-btn pill-btn model-badge" id="btn-model">
             <span id="model-name">…</span><span class="tier" id="model-tier">—</span>
           </button>
@@ -247,7 +332,13 @@
       <input class="f-input" id="key-dahl" type="password" placeholder="Bearer …" spellcheck="false">
 
       <label class="f-label">XRouter · xkiro.com · XTROUTER_API_KEY</label>
-      <input class="f-input" id="key-xkiro" type="password" placeholder="XTROUTER_API_KEY — free-модели: Qwen, MiniMax, Mistral, SenseNova…" spellcheck="false">
+      <input class="f-input" id="key-xkiro" type="password" placeholder="XTROUTER_API_KEY — free-модели: Qwen, MiniMax, Mistral, SenseNova… + Code-режим" spellcheck="false">
+
+      <label class="f-label">🐙 GitHub · Personal Access Token (коннектор)</label>
+      <input class="f-input" id="key-github" type="password" placeholder="ghp_… / github_pat_… (scope: repo)" spellcheck="false">
+
+      <label class="f-label">🦊 GitLab · Access Token (коннектор)</label>
+      <input class="f-input" id="key-gitlab" type="password" placeholder="glpat-… (scope: read_api)" spellcheck="false">
 
       <label class="f-label">Arena AI · сессионная кука (arena.ai)</label>
       <textarea class="f-input" id="key-arena" rows="2" placeholder="F12 → Network → arena.ai → Request Headers → всё значение «cookie:»" spellcheck="false"></textarea>
@@ -277,21 +368,18 @@
 
     <!-- ПОПОВЕР: What's new -->
     <div class="pop glass hidden" id="pop-whats">
-      <div class="pop-head"><b>What's new · 1.0.4</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <div class="pop-head"><b>What's new · 1.0.5</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
       <ul class="whats-list">
-        <li><b>Исправлено отображение текста</b> — курсор ▍ больше не «запекается» в словах (был баг вставки токенов).</li>
-        <li><b>Новый маскот 1:1</b> — как в присланной картинке (белые глаза, руки по бокам, 4 лапы); размер меняется в Настройках (Меньше/Стандарт/Больше); оверлей НЕ показывается, пока ты смотришь на приложение.</li>
-        <li><b>dahl: живой каталог моделей</b> + честное «модель на техобслуживании — выбери другую» (без 10 пустых попыток); ключ с «Bearer …» теперь срезается сам.</li>
-        <li><b>OpenRouter: честное «модель убрали из free»</b> + актуальная дефолтная модель.</li>
-        <li><b>История: корзина 🗑 видна всегда</b>; «Local» в папках открывает домашнюю; из титлбара убраны лишние кнопки.</li>
-        <li><b>Arena</b> — напоминание: токен сессии живёт ~1 час, куку периодически копируют заново (прямо в приложение, не через чат).</li>
+        <li><b>🧠 Code-режим</b> — совет из самых мощных бесплатных моделей (XRouter free: Qwen3 Coder Plus, DeepSeek V4.1, MiniMax M3, Qwen3.8 Max и другие) думает параллельно, а судья сводит всё в ОДИН итоговый вывод. Отдельные ответы каждой модели видно в свёртке под ответом.</li>
+        <li><b>🔌 Коннекторы</b> — новая вкладка в панели: <b>GitHub</b> и <b>GitLab</b> (по PAT): выбери репозиторий → листай файлы → «💬 В чат» (файл улетает модели в контекст), «💾 В папку проекта», «📦 Скачать весь репо». Google Drive — с инструкцией по OAuth-подключению.</li>
+        <li><b>Маскот с чёрными глазами</b> — как в оригинале.</li>
+        <li><b>1.0.4:</b> исправлено отображение текста (курсор ▍ больше не «запекается»), маскот 1:1 с настройкой размера, dahl живой каталог, честные 404 OpenRouter, корзина истории видна всегда.</li>
         <li><b>1.0.3:</b> 👁 видение экрана (микроскриншоты), XRouter (xkiro.com).</li>
-        <li><b>XRouter (xkiro.com) — 4-й провайдер</b> — бесплатные модели: Qwen, MiniMax, Mistral, SenseNova, DeepSeek… Живой список с API, ключ XTROUTER_API_KEY.</li>
-        <li><b>Маскот слушается</b> — вкл/выкл (мини + оверлей), анимация вкл/выкл, чим отдельно; мини-маскот <b>следит за мышкой глазами</b> (тело стоит на месте) и машет, когда курсор рядом.</li>
-        <li><b>Оверлей «выкатывается»</b> — подкат из угла с наклоном, как шарик, затем машет и замеряет.</li>
-        <li><b>История чатов</b> — клик открывает чат, 🗑 (появляется при наведении) удаляет чат в архив.</li>
-        <li><b>1.0.1:</b> Arena на реальном arena.ai (проверка /api/me, твой ник в шапке), dahl анти-«terminated» + non-stream фолбэк.</li>
-        <li><b>База:</b> движок «1 нажатие = 1 ответ», авто-миграция чатов, файлы/терминал, локальная регистрация.</li>
+        <li><b>1.0.3:</b> 👁 видение экрана (микроскриншоты), XRouter — 4-й провайдер (37+ free-моделей: Qwen, MiniMax, Mistral, SenseNova, DeepSeek…).</li>
+        <li><b>Маскот:</b> 1:1 как в картинке, вкл/выкл и размер в Настройках, моргает, следит за мышкой, машет; оверлей не пиликает, пока ты в приложении; тихий чим при завершении задачи.</li>
+        <li><b>История чатов:</b> клик открывает чат, 🗑 всегда видна и переносит чат в архив.</li>
+        <li><b>Arena:</b> реальная сессия arena.ai, авто-миграция при лимите чата; токен живёт ~1 час — куку периодически копируют заново (прямо в приложение).</li>
+        <li><b>База:</b> движок «1 нажатие = 1 ответ» (до 10 переподключений), файлы/терминал, локальная регистрация — все данные только на твоём ПК.</li>
       </ul>
     </div>
 

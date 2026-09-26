@@ -109,12 +109,13 @@ const DEFAULT_SETTINGS = {
   },
   model: {
     provider: "openrouter", // openrouter | dahl | arena | xkiro
-    id: "deepseek/deepseek-chat-v3-0324:free",
+    id: "qwen/qwen3.8-27b:free", // актуальная free-модель (список живой в UI)
   },
   arenaLimit: 30,        // лимит сообщений на чат в Arena (Agent Mode ≈ 5!)
   mascotShow: true,      // маскот: показывать (мини в строке + оверлей)
   mascotAnim: true,      // анимация маскота: моргание, машет, следит за мышкой
-  showMascotOnDone: true, // маскот + чим при завершении задачи
+  mascotScale: 1,        // размер маскота: 0.8 / 1 / 1.4
+  showMascotOnDone: true, // оверлей при завершении задачи (только когда не в фокусе)
   chimeOnDone: true,     // тихий чим при завершении задачи
 };
 

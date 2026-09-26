@@ -91,12 +91,14 @@ contextBridge.exposeInMainWorld("cc", {
     onWave: (cb) => on("mascot:wave", cb),
     taskDone: () => ipcRenderer.send("mascot:taskDone"),
     hide: () => ipcRenderer.invoke("mascot:hide"),
+    setScale: (s) => ipcRenderer.invoke("mascot:setScale", s),
   },
 
-  /* ---------- overlay.html: показать/скрыть/клик по маскоту ---------- */
+  /* ---------- overlay.html: показать/скрыть/клик/масштаб ---------- */
   overlay: {
     onShow: (cb) => on("overlay:show", cb),
     onHide: (cb) => on("overlay:hide", cb),
+    onScale: (cb) => on("overlay:scale", cb),
     click: () => ipcRenderer.send("overlay:click"),
   },
 });

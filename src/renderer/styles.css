@@ -512,11 +512,10 @@ input, textarea, select { font-family: inherit; font-weight: 500; }
 }
 .history-row:hover { background: rgba(255,255,255,.06); }
 .hist-del {
-  opacity: 0; flex: none; margin-left: auto;
-  font-size: 12px; line-height: 1;
+  opacity: .8; flex: none; margin-left: auto;
+  font-size: 13px; line-height: 1;
   transition: opacity .15s;
 }
-.history-row:hover .hist-del { opacity: .75; }
 .hist-del:hover { opacity: 1 !important; color: #ff7b7b; }
 
 /* ---------- «видение» экрана: кнопки + превью ---------- */

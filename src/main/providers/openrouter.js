@@ -18,7 +18,10 @@ class OpenRouter extends Provider {
   limit = 100;
 
   get key() {
-    return (store.getSettings().keys.openrouter || "").trim();
+    // если пользователь вставил ключ с префиксом «Bearer …» — срезаем
+    let k = (store.getSettings().keys.openrouter || "").trim();
+    k = k.replace(/^bearer\s+/i, "").trim();
+    return k;
   }
 
   headers() {
@@ -70,9 +73,16 @@ class OpenRouter extends Provider {
       signal,
     });
     if (!r.ok) {
-      const body = (await r.text()).slice(0, 220);
+      const body = (await r.text().catch(() => "")).slice(0, 300);
       if (r.status === 401) throw new ProviderError("no_key", "OpenRouter: ключ не принят (401). Проверь ключ в Настройках.");
       if (r.status === 429) throw new Error("429: превышен лимит запросов OpenRouter");
+      if (r.status === 404 && /unavailable for free|not found/i.test(body)) {
+        const e = new ProviderError("model_gone",
+          "Эта модель убрана из бесплатной линейки OpenRouter (у них часто ротация free-списка). " +
+          "Открой «Модели» → группа «OpenRouter · только free» → выбери любую из списка.");
+        e.noRetry = true;
+        throw e;
+      }
       throw new Error("OpenRouter: HTTP " + r.status + " — " + body);
     }
     yield* parseSSE(r, "OpenRouter");

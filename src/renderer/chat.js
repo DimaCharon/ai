@@ -143,20 +143,11 @@
     welcomeEl.classList.remove("hidden");
   }
 
-  /* ---------- история (← →) ---------- */
+  /* ---------- история (← →) — кнопка снята с титлбара,
+     снапшоты всё ещё ведутся для возможного возврата ---------- */
   function commitSnapshot() {
     state.snapshots.push(messagesEl.innerHTML);
     state.hist = state.snapshots.length - 1;
-  }
-  function back() {
-    if (state.busy || state.hist <= 0) return;
-    state.hist--;
-    messagesEl.innerHTML = state.snapshots[state.hist];
-  }
-  function fwd() {
-    if (state.busy || state.hist >= state.snapshots.length - 1) return;
-    state.hist++;
-    messagesEl.innerHTML = state.snapshots[state.hist];
   }
 
   /* ---------- отправка: 1 нажатие = 1 ответ ---------- */
@@ -218,8 +209,9 @@
     hideStatus();
     if (!state.currentBody) state.currentBody = pushMsg("assistant", "", state.modelName);
     state.hasTokens = true;
-    state.currentBody.textContent += text;
-    // каретка
+    // ВАЖНО: вставляем текст НОВОЙ текстовой нодрой ПЕРЕД кареткой.
+    // (Было: currentBody.textContent += text — чтение textContent
+    // «запекало» символ каретки ▍ внутрь текста: «Пр▍ивет».)
     let caret = state.currentBody.querySelector(".caret");
     if (!caret) {
       caret = document.createElement("span");
@@ -227,6 +219,7 @@
       caret.textContent = "▍";
       state.currentBody.appendChild(caret);
     }
+    caret.before(document.createTextNode(text));
     messagesEl.scrollTop = messagesEl.scrollHeight;
   });
 
@@ -291,9 +284,7 @@
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) send();
   });
-  $("#btn-back").addEventListener("click", back);
-  $("#btn-fwd").addEventListener("click", fwd);
 
   window.CC = window.CC || {};
-  Object.assign(window.CC, { Chat: { send, back, fwd, loadChat, newChat, state, setScreenMode } });
+  Object.assign(window.CC, { Chat: { send, loadChat, newChat, state, setScreenMode } });
 })();

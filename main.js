@@ -88,9 +88,26 @@ function createOverlay() {
 function showOverlay(tip) {
   if (!overlay || overlay.isDestroyed()) return;
   overlay.showInactive(); // показать, НЕ отнимая фокус у приложения
-  overlay.webContents.send("overlay:show", tip || "Задача выполнена — кликни, чтобы вернуться");
+  overlay.webContents.send("overlay:show", tip || "Задача выполнена — кликни, чтобы вернуться", mascotScale());
   // чим играет в главном окне (после жеста пользователя — автоплей разрешён)
   safeSend(win, "mascot:wave");
+}
+
+/* ---------- размер маскота (настройка) ---------- */
+let mascotScaleVal = 1;
+function mascotScale() {
+  return Math.min(2, Math.max(0.6, Number(mascotScaleVal) || 1));
+}
+function applyMascotScale(s) {
+  mascotScaleVal = mascotScale();
+  if (overlay && !overlay.isDestroyed()) {
+    const size = Math.round(150 * mascotScaleVal);
+    const wa = screen.getPrimaryDisplay().workArea;
+    overlay.setSize(size, size);
+    overlay.setPosition(wa.x + wa.width - size, wa.y + wa.height - size);
+    overlay.webContents.send("overlay:scale", mascotScaleVal);
+  }
+  return mascotScaleVal;
 }
 
 function hideOverlay() {
@@ -201,11 +218,14 @@ function registerIpc() {
   ipcMain.on("mascot:taskDone", () => {
     const s = store.getSettings();
     if (s.mascotShow === false) return;
-    if (s.showMascotOnDone) {
-      showOverlay("Задача выполнена — кликни, чтобы вернуться");
-    }
+    if (!s.showMascotOnDone) return;
+    // Пользователь СМОТРИТ на приложение — не отвлекаем оверлеем и чимом.
+    // Оверлей нужен, когда внимание ELSEWHERE (другое окно).
+    if (win && !win.isDestroyed() && win.isFocused()) return;
+    showOverlay("Задача выполнена — кликни, чтобы вернуться");
   });
   ipcMain.handle("mascot:hide", () => { hideOverlay(); return { ok: true }; });
+  ipcMain.handle("mascot:setScale", (_e, s) => { return { ok: true, scale: applyMascotScale(s) }; });
 }
 
 /* ============================================================

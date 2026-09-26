@@ -5,7 +5,7 @@
   <title>Charon Overlay</title>
   <style>
     /* Прозрачное окно-оверлей 150×150 в правом нижнем углу */
-    html, body { margin: 0; padding: 0; width: 150px; height: 150px; overflow: hidden; background: transparent; }
+    html, body { margin: 0; padding: 0; width: calc(150px * var(--ms, 1)); height: calc(150px * var(--ms, 1)); overflow: hidden; background: transparent; }
     #tip {
       position: absolute; right: 12px; bottom: 96px;
       max-width: 210px;
@@ -33,7 +33,8 @@
       filter: blur(7px);
     }
     #slot canvas {
-      width: 78px; height: 45px; display: block; margin: 13px auto 0;
+      width: calc(78px * var(--ms, 1)); height: calc(48px * var(--ms, 1));
+      display: block; margin: calc(13px * var(--ms, 1)) auto 0;
       image-rendering: pixelated; position: relative; z-index: 1;
     }
     #slot.pop { animation: pop .7s cubic-bezier(.3,1.35,.45,1) forwards; }
@@ -51,7 +52,7 @@
 <body>
   <div id="tip">Задача выполнена — кликни, чтобы вернуться</div>
   <button id="slot" title="Charon: вернуться в приложение">
-    <canvas id="c" width="78" height="45"></canvas>
+    <canvas id="c" width="78" height="48"></canvas>
   </button>
   <script src="charon.js"></script>
   <script src="overlay.js"></script>

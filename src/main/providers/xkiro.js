@@ -66,7 +66,10 @@ class Xkiro extends Provider {
   limit = 100;
 
   get key() {
-    return (store.getSettings().keys.xkiro || "").trim();
+    // если пользователь вставил ключ с префиксом «Bearer …» — срезаем
+    let k = (store.getSettings().keys.xkiro || "").trim();
+    k = k.replace(/^bearer\s+/i, "").trim();
+    return k;
   }
 
   headers(withKey = true) {

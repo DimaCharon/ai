@@ -12,7 +12,14 @@
   const tip = document.getElementById("tip");
   const sprite = new window.CharonSprite(document.getElementById("c"), { blink: true });
 
-  window.cc.overlay.onShow((tipText) => {
+  function applyScale(s) {
+    const v = Math.min(2, Math.max(0.6, Number(s) || 1));
+    document.body.style.setProperty("--ms", v);
+  }
+  window.cc.overlay.onScale(applyScale);
+
+  window.cc.overlay.onShow((tipText, scale) => {
+    if (scale) applyScale(scale);
     tip.textContent = tipText || "Задача выполнена — кликни, чтобы вернуться";
     tip.classList.add("show");
     // перезапуск pop-анимации

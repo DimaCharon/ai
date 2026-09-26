@@ -101,6 +101,11 @@ async function runRequest(provider, opts) {
       return { ok: true, text: full, attempts: attempt };
     } catch (err) {
       if (signal && signal.aborted) return { ok: false, code: "aborted", aborted: true };
+      // Ошибки, на которые повторять бессмысленно (модель на обслуживании,
+      // капча, неверный ключ) — сразу диагностика, без 10 попыток.
+      if (err && err.noRetry) {
+        return { ok: false, code: err.code || "provider", message: err.message, retryable: false };
+      }
       if (attempt === maxAttempts) {
         return {
           ok: false,

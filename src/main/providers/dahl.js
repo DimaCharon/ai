@@ -42,7 +42,10 @@ class Dahl extends Provider {
   ];
 
   get key() {
-    return (store.getSettings().keys.dahl || "").trim();
+    // если пользователь вставил ключ с префиксом «Bearer …» — срезаем
+    let k = (store.getSettings().keys.dahl || "").trim();
+    k = k.replace(/^bearer\s+/i, "").trim();
+    return k;
   }
 
   headers() {
@@ -88,15 +91,42 @@ class Dahl extends Provider {
     }
   }
 
+  /** Живой список моделей (GET /v1/models). Dahl периодически
+   *  убирает/добавляет модели — показываем актуальный список;
+   *  если сеть не отвечает — запасной список из ТЗ. */
   async listModels() {
+    if (this.key) {
+      try {
+        const c = new AbortController();
+        const t = setTimeout(() => c.abort(), 10000);
+        const r = await fetch(this.base + "/models", { headers: this.headers(), signal: c.signal });
+        clearTimeout(t);
+        if (r.ok) {
+          const j = await r.json();
+          const arr = (j.data || [])
+            .map((m) => ({ id: m.id, name: m.id }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          if (arr.length) return arr;
+        }
+      } catch { /* оффлайн — запасной список */ }
+    }
     return Dahl.MODELS;
   }
 
   /** Разбор ответа (HTTP-статусы одинаковы для stream и non-stream). */
   async handleHttpError(r) {
-    const body = (await r.text().catch(() => "")).slice(0, 220);
+    const body = (await r.text().catch(() => "")).slice(0, 300);
     if (r.status === 401) throw new ProviderError("no_key", "dahl.global: ключ не принят (401). Проверь ключ в Настройках.");
     if (r.status === 429) throw new Error("429: превышен лимит запросов dahl.global");
+    // Модель на техобслуживании — повторять бессмысленно, говорим честно
+    if (/maintenance|model_maintenance/i.test(body) || /maintenance/i.test(body)) {
+      const e = new ProviderError("maintenance",
+        "Модель сейчас на техобслуживании у dahl.global (сервер: до 24 часов). " +
+        "Выбери другую модель: DeepSeek-V4-Flash-0731 или MiniMax-M2.7. " +
+        "Детали от сервера: " + body.slice(0, 160));
+      e.noRetry = true;
+      throw e;
+    }
     throw new Error("dahl.global: HTTP " + r.status + " — " + body);
   }
 

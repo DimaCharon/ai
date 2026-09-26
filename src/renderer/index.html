@@ -11,7 +11,7 @@
   <!-- ================= ЭКРАН ВХОДА / РЕГИСТРАЦИИ ================= -->
   <div id="auth-screen" class="auth-screen hidden">
     <div class="auth-card glass">
-      <canvas id="auth-mascot" width="78" height="45"></canvas>
+      <canvas id="auth-mascot" width="78" height="48"></canvas>
       <h1 class="auth-title">CHARON CODE</h1>
       <p class="auth-sub">Десктопный AI-проводник · Arena AI · dahl.global · OpenRouter</p>
 
@@ -47,12 +47,6 @@
           <button class="tl tl-red" id="btn-close" title="Закрыть"><span>×</span></button>
           <button class="tl tl-yellow" id="btn-min" title="Свернуть"><span>−</span></button>
           <button class="tl tl-green" id="btn-max" title="Развернуть / полный экран"><span>+</span></button>
-        </div>
-
-        <div class="win-tools">
-          <button class="icon-btn glass-btn" id="btn-mini" title="Свернуть">◻</button>
-          <button class="icon-btn glass-btn" id="btn-back" title="Назад (по истории сообщений)">←</button>
-          <button class="icon-btn glass-btn" id="btn-fwd" title="Вперёд (по истории сообщений)">→</button>
         </div>
 
         <div class="win-tools-right">
@@ -190,7 +184,7 @@
           <div class="chips" id="chips">
             <button class="chip active" id="chip-home">🖥 Local</button>
           </div>
-          <canvas class="charon-mini" id="mini-canvas" width="52" height="30" title="Charon — призвать маскота"></canvas>
+          <canvas class="charon-mini" id="mini-canvas" width="78" height="48" title="Charon — призвать маскота"></canvas>
         </div>
 
         <div class="notice glass" id="notice">
@@ -265,6 +259,12 @@
 
       <label class="check-row"><input type="checkbox" id="set-mascot"> Маскот: показывать (мини + оверлей при завершении)</label>
       <label class="check-row"><input type="checkbox" id="set-mascot-anim"> Анимация маскота: моргает, машет, следит за мышкой</label>
+      <label class="f-label">Размер маскота (мини + оверлей)</label>
+      <select class="f-input" id="set-mascot-scale">
+        <option value="0.8">Меньше</option>
+        <option value="1" selected>Стандарт</option>
+        <option value="1.4">Больше</option>
+      </select>
       <label class="check-row"><input type="checkbox" id="set-chime"> Тихий чим при завершении задачи</label>
 
       <div class="pop-actions">
@@ -277,9 +277,15 @@
 
     <!-- ПОПОВЕР: What's new -->
     <div class="pop glass hidden" id="pop-whats">
-      <div class="pop-head"><b>What's new · 1.0.3</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <div class="pop-head"><b>What's new · 1.0.4</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
       <ul class="whats-list">
-        <li><b>👁 Видение экрана</b> — «📷 Экран» прикладывает скриншот к следующему сообщению, «👁 Live» — свежий микроскриншот к каждому. Модели с меткой 👁 видят изображение (у XRouter их 26 из 37 free). В чате остаётся метка 📷, сам кадр в историю не складывается.</li>
+        <li><b>Исправлено отображение текста</b> — курсор ▍ больше не «запекается» в словах (был баг вставки токенов).</li>
+        <li><b>Новый маскот 1:1</b> — как в присланной картинке (белые глаза, руки по бокам, 4 лапы); размер меняется в Настройках (Меньше/Стандарт/Больше); оверлей НЕ показывается, пока ты смотришь на приложение.</li>
+        <li><b>dahl: живой каталог моделей</b> + честное «модель на техобслуживании — выбери другую» (без 10 пустых попыток); ключ с «Bearer …» теперь срезается сам.</li>
+        <li><b>OpenRouter: честное «модель убрали из free»</b> + актуальная дефолтная модель.</li>
+        <li><b>История: корзина 🗑 видна всегда</b>; «Local» в папках открывает домашнюю; из титлбара убраны лишние кнопки.</li>
+        <li><b>Arena</b> — напоминание: токен сессии живёт ~1 час, куку периодически копируют заново (прямо в приложение, не через чат).</li>
+        <li><b>1.0.3:</b> 👁 видение экрана (микроскриншоты), XRouter (xkiro.com).</li>
         <li><b>XRouter (xkiro.com) — 4-й провайдер</b> — бесплатные модели: Qwen, MiniMax, Mistral, SenseNova, DeepSeek… Живой список с API, ключ XTROUTER_API_KEY.</li>
         <li><b>Маскот слушается</b> — вкл/выкл (мини + оверлей), анимация вкл/выкл, чим отдельно; мини-маскот <b>следит за мышкой глазами</b> (тело стоит на месте) и машет, когда курсор рядом.</li>
         <li><b>Оверлей «выкатывается»</b> — подкат из угла с наклоном, как шарик, затем машет и замеряет.</li>

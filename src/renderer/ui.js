@@ -410,6 +410,7 @@
       $("#set-mascot").checked = s.mascotShow !== false;
       $("#set-mascot-anim").checked = s.mascotAnim !== false;
       $("#set-chime").checked = s.chimeOnDone !== false;
+      $("#set-mascot-scale").value = String(s.mascotScale || 1);
       openPop("settings");
     } else closePops();
   });
@@ -424,6 +425,7 @@
       arenaLimit: Math.max(4, Number($("#set-arena-limit").value) || 30),
       mascotShow: $("#set-mascot").checked,
       mascotAnim: $("#set-mascot-anim").checked,
+      mascotScale: Math.min(2, Math.max(0.6, Number($("#set-mascot-scale").value) || 1)),
       chimeOnDone: $("#set-chime").checked,
       showMascotOnDone: $("#set-mascot").checked,
     });
@@ -598,7 +600,8 @@
         b.classList.add("active");
         const p = b.dataset.path;
         $("#term-cwd").value = p;
-        if (p) Files.loadDir(p);
+        // Local (пустой путь) = домашняя папка — открываем её в файлах
+        Files.loadDir(p || undefined);
       })
     );
   }
@@ -622,16 +625,20 @@
   let miniSprite = null;
   let chimeEnabled = true;
 
-  /** Применить настройки маскота к мини-канвасу. */
+  /** Применить настройки маскота: показ, анимация, размер (мини + оверлей). */
   function applyMascotSettings(s) {
     const show = s.mascotShow !== false;
     const anim = s.mascotAnim !== false;
+    const scale = Math.min(2, Math.max(0.6, Number(s.mascotScale) || 1));
     chimeEnabled = s.chimeOnDone !== false;
     const c = $("#mini-canvas");
     if (!c) return;
     if (!miniSprite) miniSprite = new window.CharonSprite(c, { blink: true, anim });
     miniSprite.setHidden(!show);
     miniSprite.setAnim(anim);
+    c.style.transform = "scale(" + scale + ")";
+    c.style.transformOrigin = "left bottom";
+    cc.mascot.setScale(scale); // оверлей в main пересчитает под масштаб
     if (show && anim) miniSprite.startIdle();
   }
 

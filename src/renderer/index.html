@@ -4,6 +4,35 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Charon Code</title>
+  <script>
+    /* Страховка от «чёрного экрана»: если любой скрипт рендерера падает,
+       показываем ошибку видимой плашкой (иначе оба экрана остаются hidden
+       и окно выглядит мёртвым). Ставится ДО всех скриптов. */
+    (function () {
+      function showBootError(txt) {
+        try {
+          var b = document.getElementById("boot-error");
+          if (!b) {
+            b = document.createElement("div");
+            b.id = "boot-error";
+            b.setAttribute("style",
+              "position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;" +
+              "max-height:45%;overflow:auto;padding:12px 14px;border-radius:10px;" +
+              "background:#2a1215;border:1px solid #e5484d;color:#ffdfde;" +
+              "font:12px/1.5 monospace;white-space:pre-wrap;pointer-events:auto;");
+            (document.body || document.documentElement).appendChild(b);
+          }
+          b.textContent = "Ошибка интерфейса: " + txt;
+        } catch (e) { /* даже это не сработало — ничего не поделать */ }
+      }
+      window.addEventListener("error", function (e) {
+        if (e && e.message) showBootError(e.message + "\n" + (e.filename || "") + ":" + (e.lineno || ""));
+      });
+      window.addEventListener("unhandledrejection", function (e) {
+        var r = e && e.reason; if (r && String(r).indexOf) showBootError(String(r));
+      });
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -368,8 +397,9 @@
 
     <!-- ПОПОВЕР: What's new -->
     <div class="pop glass hidden" id="pop-whats">
-      <div class="pop-head"><b>What's new · 1.0.5</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <div class="pop-head"><b>What's new · 1.0.6</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
       <ul class="whats-list">
+        <li><b>1.0.6 — исправлен чёрный экран при запуске.</b> В 1.0.4 при чистке титлбара из HTML удалили кнопку ◻, а код продолжал к ней обращаться — скрипт интерфейса падал в самом старте, и окно оставалось чёрным. Теперь всё запускается, плюс любые будущие ошибки интерфейса показываются видимой плашкой внизу экрана (а не молчаливым чёрным окном).</li>
         <li><b>🧠 Code-режим</b> — совет из самых мощных бесплатных моделей (XRouter free: Qwen3 Coder Plus, DeepSeek V4.1, MiniMax M3, Qwen3.8 Max и другие) думает параллельно, а судья сводит всё в ОДИН итоговый вывод. Отдельные ответы каждой модели видно в свёртке под ответом.</li>
         <li><b>🔌 Коннекторы</b> — новая вкладка в панели: <b>GitHub</b> и <b>GitLab</b> (по PAT): выбери репозиторий → листай файлы → «💬 В чат» (файл улетает модели в контекст), «💾 В папку проекта», «📦 Скачать весь репо». Google Drive — с инструкцией по OAuth-подключению.</li>
         <li><b>Маскот с чёрными глазами</b> — как в оригинале.</li>

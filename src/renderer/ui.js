@@ -148,7 +148,6 @@
      ============================================================ */
   $("#btn-close").addEventListener("click", () => cc.win.close());
   $("#btn-min").addEventListener("click", () => cc.win.minimize());
-  $("#btn-mini").addEventListener("click", () => cc.win.minimize());
   $("#btn-max").addEventListener("click", () => cc.win.toggleMax());
 
   /* ============================================================

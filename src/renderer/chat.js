@@ -158,6 +158,7 @@
     const text = (raw != null ? raw : inputEl.value).trim();
     if (!text || state.busy || !state.providerId) return;
     inputEl.value = "";
+    autoSize();
     state.lastUserText = text;
     state.hist = -1;
     state.snapshots = [];
@@ -333,8 +334,15 @@
     if (state.activeChatId) cc.chat.stop(state.activeChatId);
   });
   inputEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) send();
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
+
+  /* Авто-растяжение: длинный текст идёт ВНИЗ (до 140px), а не вправо */
+  function autoSize() {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + "px";
+  }
+  inputEl.addEventListener("input", autoSize);
 
   window.CC = window.CC || {};
   Object.assign(window.CC, { Chat: { send, loadChat, newChat, state, setScreenMode } });

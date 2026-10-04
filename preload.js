@@ -103,6 +103,14 @@ contextBridge.exposeInMainWorld("cc", {
     setScale: (s) => ipcRenderer.invoke("mascot:setScale", s),
   },
 
+  /* ---------- Arena Bridge (браузерное расширение) ---------- */
+  bridge: {
+    /** порт локального сервера + папка расширения */
+    info: () => ipcRenderer.invoke("bridge:info"),
+    /** показать папку extension в Проводнике */
+    reveal: () => ipcRenderer.invoke("bridge:reveal"),
+  },
+
   /* ---------- overlay.html: показать/скрыть/клик/масштаб ---------- */
   overlay: {
     onShow: (cb) => on("overlay:show", cb),

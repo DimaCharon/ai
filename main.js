@@ -10,7 +10,7 @@
    ============================================================ */
 "use strict";
 
-const { app, BrowserWindow, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, screen, shell } = require("electron");
 const path = require("path");
 
 const store = require("./src/main/store");
@@ -18,6 +18,7 @@ const engine = require("./src/main/engine");
 const fsSvc = require("./src/main/fs");
 const screenSvc = require("./src/main/screen");
 const connSvc = require("./src/main/connectors");
+const bridgeSvc = require("./src/main/bridge");
 
 let win = null;      // главное окно
 let overlay = null;  // оверлей маскота
@@ -233,6 +234,21 @@ function registerIpc() {
   });
   ipcMain.handle("mascot:hide", () => { hideOverlay(); return { ok: true }; });
   ipcMain.handle("mascot:setScale", (_e, s) => { return { ok: true, scale: applyMascotScale(s) }; });
+
+  /* ---- Arena Bridge: браузерное расширение подтягивает куку arena.ai ---- */
+  ipcMain.handle("bridge:info", () => ({
+    ok: true,
+    port: bridgeSvc.BRIDGE_PORT,
+    dir: bridgeSvc.extDir(),
+  }));
+  ipcMain.handle("bridge:reveal", () => {
+    try {
+      shell.showItemInFolder(bridgeSvc.extDir());
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+  });
 }
 
 /* ============================================================
@@ -241,6 +257,7 @@ function registerIpc() {
 app.whenReady().then(() => {
   store.dataDir(); // создать структуру данных
   registerIpc();
+  bridgeSvc.startBridgeServer(engine); // Arena Bridge (для браузера)
   createWindow();
   createOverlay();
   app.on("activate", () => {

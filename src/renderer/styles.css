@@ -447,16 +447,7 @@ input, textarea, select { font-family: inherit; font-weight: 500; }
 }
 .charon-mini:hover { transform: translateY(-1px) scale(1.06); }
 
-.notice {
-  display: flex; align-items: center; gap: 10px;
-  border-radius: 12px; padding: 8px 11px;
-  font-size: 12.5px; font-weight: 500; color: #c8cfdd;
-  margin-bottom: 8px;
-  transition: opacity .3s, transform .3s;
-}
-.notice.out { opacity: 0; transform: translateY(6px); }
-.n-ico { color: var(--orange); font-weight: 800; }
-.n-text { flex: 1; }
+/* (плашка «Движок: 1 нажатие = 1 ответ» и её стили удалены в 1.0.7) */
 
 .input-bar {
   display: flex; align-items: center; gap: 10px;
@@ -468,6 +459,15 @@ input, textarea, select { font-family: inherit; font-weight: 500; }
   color: var(--tx); font-size: 14.5px; font-weight: 500;
 }
 .input-bar input::placeholder { color: var(--mut2); }
+.input-bar textarea {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--tx); font-size: 14.5px; font-weight: 500;
+  font-family: inherit; line-height: 1.45;
+  resize: none; overflow-y: auto;
+  min-height: 22px; max-height: 140px;
+  padding: 2px 0;
+}
+.input-bar textarea::placeholder { color: var(--mut2); }
 .send-btn { width: 36px; height: 36px; border-radius: 10px; padding: 0; }
 .send-btn:hover { color: #fff; border-color: rgba(229,113,75,.65); }
 
@@ -485,6 +485,9 @@ input, textarea, select { font-family: inherit; font-weight: 500; }
 .pop {
   position: fixed; z-index: 70;
   width: 340px; border-radius: 14px; padding: 12px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
   animation: popin .18s ease;
 }
 @keyframes popin { from { opacity: 0; transform: translateY(8px); } }

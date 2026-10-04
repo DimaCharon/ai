@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Charon Code — Arena Bridge",
+  "version": "1.0.7",
+  "description": "Подсвечивает свежую сессию arena.ai локальному приложению Charon Code (127.0.0.1:48107). Кука никуда не отправляется, кроме твоего компьютера.",
+  "permissions": ["cookies"],
+  "host_permissions": [
+    "https://arena.ai/*",
+    "http://127.0.0.1/*"
+  ],
+  "action": {
+    "default_title": "Charon Code: передать сессию Arena",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

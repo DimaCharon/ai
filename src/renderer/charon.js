@@ -68,11 +68,13 @@
         const isEye = ch === "e";
         ctx.fillStyle = isEye ? COLORS.eye : COLORS.body;
         if (isEye && (ox || oy) && name !== "blink") {
-          ctx.fillRect(c * px, r * py, px, py);
-          if (ox > 0) ctx.fillRect((c + 1) * px, r * py, px, py);
-          if (ox < 0) ctx.fillRect((c - 1) * px, r * py, px, py);
-          if (oy > 0) ctx.fillRect(c * px, (r + 1) * py, px, py);
-          if (oy < 0) ctx.fillRect(c * px, (r - 1) * py, px, py);
+          // ЧИСТЫЙ СДВИГ: глаз (блок 2 пикселя) смещается на 1 клетку
+          // в сторону взгляда, а не «растёт» до 3 (раньше рисовался
+          // оригинал + дополнительная клетка — глаз становился 3×).
+          const ex = c + ox, ey = r + oy;
+          if (ex >= 0 && ex < CW && ey >= 0 && ey < H) {
+            ctx.fillRect(ex * px, ey * py, px, py);
+          }
         } else {
           ctx.fillRect(c * px, r * py, px, py);
         }

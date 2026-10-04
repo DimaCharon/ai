@@ -341,6 +341,16 @@
     $(s).addEventListener("click", (e) => refreshArena(e.currentTarget))
   );
 
+  /* ---- Arena Bridge: показать папку расширения в Проводнике ---- */
+  const bridgeReveal = $("#btn-bridge-reveal");
+  if (bridgeReveal && cc.bridge && cc.bridge.reveal) {
+    bridgeReveal.addEventListener("click", () => {
+      cc.bridge.reveal().then((r) => {
+        if (!r || !r.ok) toast("Не удалось открыть папку: " + (r && r.error ? r.error : ""), "err");
+      });
+    });
+  }
+
   /* ============================================================
      КНОПКА МОДЕЛИ (поповер) + ИСТОРИЯ
      ============================================================ */
@@ -461,7 +471,7 @@
     $("#dt-files").classList.toggle("active", pane === "files");
     $("#dt-term").classList.toggle("active", pane === "term");
     $("#dt-conn").classList.toggle("active", pane === "conn");
-    if (pane === "files" && !Files.dir) Files.loadDir();
+    if (pane === "files" && !Files.dir && !Files.loading) Files.loadDir();
     if (pane === "conn") openConnPane();
   }
   $("#btn-files").addEventListener("click", () => openDrawer("files"));
@@ -475,10 +485,13 @@
   /* ---------- Файлы ---------- */
   const Files = {
     dir: null,
+    loading: false,
     selectedFile: null,
 
     async loadDir(p) {
+      this.loading = true;
       const r = await cc.files.list(p || undefined);
+      this.loading = false;
       if (!r.ok) { toast(r.error || "Не удалось открыть папку"); return; }
       this.dir = r.path;
       $("#files-path").value = r.path;
@@ -816,6 +829,9 @@
         $("#term-cwd").value = p;
         // Local (пустой путь) = домашняя папка — открываем её в файлах
         Files.loadDir(p || undefined);
+        // ВАЖНО: показываем содержимое сразу — панель Файлы открывается сама,
+        // иначе кажется, что «приложение не видит прикреплённую папку».
+        openDrawer("files");
       })
     );
   }
@@ -825,7 +841,14 @@
     chips.push({ label: r.path.split("\\").pop() || r.path, path: r.path });
     localStorage.setItem("cc.chips", JSON.stringify(chips));
     renderChips();
-    toast("Папка добавлена: " + r.path);
+    // Новая папка становится активной, её содержимое — сразу в панели Файлы
+    $$("#chips .chip").forEach((x) => x.classList.remove("active"));
+    const btn = $(`#chips .chip[data-i="${chips.length - 1}"]`);
+    if (btn) btn.classList.add("active");
+    $("#term-cwd").value = r.path;
+    Files.loadDir(r.path);
+    openDrawer("files");
+    toast("Папка добавлена: " + r.path + " — содержимое в панели Файлы (файлы можно редактировать)");
   }
   $("#btn-plus").addEventListener("click", addChip);
 
@@ -887,11 +910,8 @@
   /* ============================================================
      ПРОЧЕЕ
      ============================================================ */
-  $("#btn-notice-x").addEventListener("click", () => {
-    const n = $("#notice");
-    n.classList.add("out");
-    setTimeout(() => n.classList.add("hidden"), 320);
-  });
+  /* ПЛАШКА «Движок 1 нажатие = 1 ответ» удалена (1.0.7) — по просьбе:
+     после закрытия не должна появляться снова. */
 
   /* ============================================================
      СТАРТ

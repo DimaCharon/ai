@@ -300,19 +300,13 @@
           <canvas class="charon-mini" id="mini-canvas" width="78" height="48" title="Charon — призвать маскота"></canvas>
         </div>
 
-        <div class="notice glass" id="notice">
-          <span class="n-ico">✦</span>
-          <span class="n-text">Движок «1 нажатие = 1 ответ»: если нейросеть тормозит или рвёт соединение — Charon сам переподключается (до 10 попыток).</span>
-          <button class="icon-btn" id="btn-notice-x" title="Скрыть">×</button>
-        </div>
-
         <div class="screen-preview hidden" id="screen-preview" title="Последний микроскриншот экрана">
           <img id="screen-preview-img" alt="скриншот">
           <span id="screen-preview-cap"></span>
         </div>
 
         <div class="input-bar glass">
-          <input id="chat-input" placeholder="Спроси что угодно… (Enter — отправить)" autocomplete="off" spellcheck="false">
+          <textarea id="chat-input" rows="1" placeholder="Спроси что угодно… (Enter — отправить, Shift+Enter — новая строка)" autocomplete="off" spellcheck="false"></textarea>
           <button class="send-btn glass-btn hidden" id="btn-stop" title="Остановить">■</button>
           <button class="send-btn glass-btn" id="btn-send" title="Отправить (Enter)">
             <svg viewBox="0 0 24 24" width="16" height="16">
@@ -373,6 +367,9 @@
       <textarea class="f-input" id="key-arena" rows="2" placeholder="F12 → Network → arena.ai → Request Headers → всё значение «cookie:»" spellcheck="false"></textarea>
       <p class="f-hint small">Важно: копировать через <b>Network</b> (не document.cookie — там нет куки Cloudflare). После вставки обязательно нажми <b>«Сохранить»</b> → «Обновить сессию Arena».</p>
 
+      <p class="f-hint small bridge-hint">🌐 <b>Расширение «Arena Bridge»</b> — кука будет подтягиваться <b>автоматически</b> из браузера, копировать её вручную больше не нужно. Установка: Chrome/Edge → <b>chrome://extensions</b> → «Режим разработчика» → «Загрузить распакованное расширение» → папка <b>extension</b> (рядом с Charon Code). Далее: в браузере, где ты вошёл в arena.ai, нажми иконку расширения → «⚡ Передать сессию».</p>
+      <button class="glass-btn sm" id="btn-bridge-reveal" title="Показать папку с расширением в Проводнике">📂 Папка расширения</button>
+
       <label class="f-label">Лимит сообщений на чат в Arena</label>
       <input class="f-input" id="set-arena-limit" type="number" min="4" max="500" placeholder="30">
       <p class="f-hint small">Достигли лимита — Charon сам создаст новый чат, перенесёт историю, проверит его и удалит старый.</p>
@@ -397,14 +394,19 @@
 
     <!-- ПОПОВЕР: What's new -->
     <div class="pop glass hidden" id="pop-whats">
-      <div class="pop-head"><b>What's new · 1.0.6</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <div class="pop-head"><b>What's new · 1.0.7</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
       <ul class="whats-list">
+        <li><b>1.0.7 — прикреплённые папки</b>: клик по папке (чипу) или «＋» — панель Файлы открывается сама и сразу показывает содержимое; файлы можно просматривать и редактировать (сохранение с подтверждением).</li>
+        <li><b>Длинный текст в поле ввода идёт ВНИЗ</b> — поле растёт до 6 строк, потом прокручивается; Enter — отправить, Shift+Enter — новая строка.</li>
+        <li><b>Настройки и все поповеры прокручиваются</b> — если не помещаются в окно, появился скролл, ничего не обрезается и не «съезжает».</li>
+        <li><b>Глаза маскота</b> — чистый сдвиг на 2 пикселя в сторону курсора (раньше при взгляде глаз «растал» до 3).</li>
+        <li><b>🌐 Расширение «Arena Bridge»</b> — в комплекте с приложением (папка <b>extension</b> рядом с Charon Code; в Настройках — кнопка «📂 Папка расширения»). Загрузи его в Chrome/Edge (chrome://extensions → «Режим разработчика» → «Загрузить распакованное расширение»), затем в браузере нажми иконку расширения → «⚡ Передать сессию» — свежая сессия Arena сама улетит в приложение. Копать куку вручную больше не нужно (она живёт ~1 час — расширение решает это в один клик).</li>
+        <li><b>Убрана плашка «Движок: 1 нажатие = 1 ответ…»</b> внизу экрана — после закрытия больше не появляется.</li>
         <li><b>1.0.6 — исправлен чёрный экран при запуске.</b> В 1.0.4 при чистке титлбара из HTML удалили кнопку ◻, а код продолжал к ней обращаться — скрипт интерфейса падал в самом старте, и окно оставалось чёрным. Теперь всё запускается, плюс любые будущие ошибки интерфейса показываются видимой плашкой внизу экрана (а не молчаливым чёрным окном).</li>
         <li><b>🧠 Code-режим</b> — совет из самых мощных бесплатных моделей (XRouter free: Qwen3 Coder Plus, DeepSeek V4.1, MiniMax M3, Qwen3.8 Max и другие) думает параллельно, а судья сводит всё в ОДИН итоговый вывод. Отдельные ответы каждой модели видно в свёртке под ответом.</li>
         <li><b>🔌 Коннекторы</b> — новая вкладка в панели: <b>GitHub</b> и <b>GitLab</b> (по PAT): выбери репозиторий → листай файлы → «💬 В чат» (файл улетает модели в контекст), «💾 В папку проекта», «📦 Скачать весь репо». Google Drive — с инструкцией по OAuth-подключению.</li>
         <li><b>Маскот с чёрными глазами</b> — как в оригинале.</li>
         <li><b>1.0.4:</b> исправлено отображение текста (курсор ▍ больше не «запекается»), маскот 1:1 с настройкой размера, dahl живой каталог, честные 404 OpenRouter, корзина истории видна всегда.</li>
-        <li><b>1.0.3:</b> 👁 видение экрана (микроскриншоты), XRouter (xkiro.com).</li>
         <li><b>1.0.3:</b> 👁 видение экрана (микроскриншоты), XRouter — 4-й провайдер (37+ free-моделей: Qwen, MiniMax, Mistral, SenseNova, DeepSeek…).</li>
         <li><b>Маскот:</b> 1:1 как в картинке, вкл/выкл и размер в Настройках, моргает, следит за мышкой, машет; оверлей не пиликает, пока ты в приложении; тихий чим при завершении задачи.</li>
         <li><b>История чатов:</b> клик открывает чат, 🗑 всегда видна и переносит чат в архив.</li>

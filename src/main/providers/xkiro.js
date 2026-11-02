@@ -65,43 +65,70 @@ class Xkiro extends Provider {
   base = "https://api.xkiro.com/v1";
   limit = 100;
 
-  get key() {
-    // если пользователь вставил ключ с префиксом «Bearer …» — срезаем
-    let k = (store.getSettings().keys.xkiro || "").trim();
-    k = k.replace(/^bearer\s+/i, "").trim();
-    return k;
+  /** ВСЕ ключи (массив; настройка хранит их в keys.xkiro[]). */
+  keys() {
+    return store.getSettings().keys.xkiro || [];
   }
 
-  headers(withKey = true) {
+  /** Активный ключ (с учётом авто-ротации). */
+  get key() {
+    const ks = this.keys();
+    if (!ks.length) return "";
+    const idx = Math.abs(store.getSettings().xkiroKeyIdx || 0) % ks.length;
+    return ks[idx];
+  }
+
+  /** Запомнить, какой ключ работает (после успешного ответа). */
+  pinKey(key) {
+    const ks = this.keys();
+    const i = ks.indexOf(key);
+    if (i >= 0) store.saveSettings({ xkiroKeyIdx: i });
+  }
+
+  headers(withKey = true, key = null) {
     const h = { "Content-Type": "application/json", Connection: "close" };
-    if (withKey && this.key) h.Authorization = "Bearer " + this.key;
+    const k = key != null ? key : this.key;
+    if (withKey && k) h.Authorization = "Bearer " + k;
     return h;
   }
 
   async check() {
-    if (!this.key) {
+    const ks = this.keys();
+    if (!ks.length) {
       throw new ProviderError(
         "no_key",
         "Нет ключа XRouter. Получи XTROUTER_API_KEY на xkiro.com и вставь его в Настройки (⚙) → «Сохранить»."
       );
     }
-    // Живая проверка ключа: /v1/models принимает Authorization; 401/403 = плохой ключ
-    try {
-      const c = new AbortController();
-      const t = setTimeout(() => c.abort(), 12000);
-      const r = await fetch(this.base + "/models", { headers: this.headers(), signal: c.signal });
-      clearTimeout(t);
-      if (r.status === 401 || r.status === 403) {
-        throw new ProviderError("no_key", "XRouter: ключ не принят (HTTP " + r.status + "). Проверь XTROUTER_API_KEY в Настройках.");
+    // Живая проверка: идём по ключам, пока не найдём принимаемый.
+    const start = Math.abs(store.getSettings().xkiroKeyIdx || 0) % ks.length;
+    let lastNetErr = null;
+    for (let i = 0; i < ks.length; i++) {
+      const k = ks[(start + i) % ks.length];
+      try {
+        const c = new AbortController();
+        const t = setTimeout(() => c.abort(), 12000);
+        const r = await fetch(this.base + "/models", { headers: this.headers(true, k), signal: c.signal });
+        clearTimeout(t);
+        if (r.status === 401 || r.status === 403) continue; // плохой ключ → следующий
+        if (!r.ok && r.status >= 500) continue;
+        this.pinKey(k);
+        return { ok: true, keys: ks.length, activeIdx: (start + i) % ks.length };
+      } catch (e) {
+        lastNetErr = e;
       }
-    } catch (e) {
-      if (e && e.providerError) throw e;
+    }
+    if (lastNetErr) {
       throw new ProviderError(
         "network",
-        "XRouter (api.xkiro.com) недоступен из твоей сети: " + String(e.message || e).slice(0, 120) +
+        "XRouter (api.xkiro.com) недоступен из твоей сети: " + String(lastNetErr.message || lastNetErr).slice(0, 120) +
         ". Проверь интернет/VPN и попробуй ещё раз."
       );
     }
+    throw new ProviderError(
+      "no_key",
+      "XRouter: ни один из " + ks.length + " ключей не принят (401/403). Проверь XTROUTER_API_KEY в Настройках."
+    );
   }
 
   /** Живой список только бесплатных моделей (эндпоинт открыт даже без ключа). */
@@ -137,21 +164,31 @@ class Xkiro extends Provider {
     return this._vision ? this._vision.get(modelId) === true : false;
   }
 
+  /** Ошибка HTTP. 401/429 помечаются как «смени ключ» (rotate). */
   async handleHttpError(r, label = "XRouter") {
     const body = (await r.text().catch(() => "")).slice(0, 220);
-    if (r.status === 401) throw new ProviderError("no_key", label + ": ключ не принят (401). Проверь XTROUTER_API_KEY в Настройках.");
+    if (r.status === 401) {
+      const e = new Error(label + ": ключ не принят (401)");
+      e.rotate = true; // плохой/истёкший ключ → пробуем следующий
+      throw e;
+    }
     if (r.status === 404) throw new Error(label + ": модель не найдена (404) — выбери другую из списка");
-    if (r.status === 429) throw new Error("429: превышен лимит запросов XRouter");
+    if (r.status === 429) {
+      const e = new Error("429: превышен лимит запросов XRouter (ключ)");
+      e.rotate = true; // лимит на этот ключ → переключаемся на другой
+      throw e;
+    }
     throw new Error(label + ": HTTP " + r.status + " — " + body);
   }
 
-  async *streamChat({ model, messages, signal }) {
+  /** Один прогон запроса (SSE + фолбэк stream:false) на конкретном ключе. */
+  async *streamOne(key, { model, messages, signal }) {
     /* --- 1) основной запрос: SSE-стрим --- */
     let gotToken = false;
     try {
       const r = await fetch(this.base + "/chat/completions", {
         method: "POST",
-        headers: this.headers(),
+        headers: this.headers(true, key),
         body: JSON.stringify({ model, messages, stream: true }),
         signal,
       });
@@ -164,12 +201,13 @@ class Xkiro extends Provider {
     } catch (err) {
       if (gotToken) throw err;
       if (signal && signal.aborted) throw err;
+      if (err && err.rotate) throw err; // лимит/401 — решает обёртка с ключами
 
       /* --- 2) FALLBACK: поток оборвался до первого токена →
              повторяем с stream:false (один JSON, живуче при обрывах) --- */
       const r2 = await fetch(this.base + "/chat/completions", {
         method: "POST",
-        headers: this.headers(),
+        headers: this.headers(true, key),
         body: JSON.stringify({ model, messages, stream: false }),
         signal,
       });
@@ -180,6 +218,41 @@ class Xkiro extends Provider {
       yield { type: "token", text };
       return;
     }
+  }
+
+  /**
+   * Стрим с АВТО-ПЕРЕКЛЮЧЕНИЕМ КЛЮЧЕЙ: если на текущем ключе 429
+   * (лимит) или 401 (плохой) ДО первого токена — берём следующий
+   * ключ из списка (настройка keys.xkiro[]). Рабочий ключ запоминается.
+   */
+  async *streamChat(opts) {
+    const ks = this.keys();
+    if (!ks.length) {
+      throw new ProviderError(
+        "no_key",
+        "Нет ключа XRouter. Вставь XTROUTER_API_KEY (можно несколько — лимиты делятся) в Настройки (⚙) → «Сохранить»."
+      );
+    }
+    const start = Math.abs(store.getSettings().xkiroKeyIdx || 0) % ks.length;
+    let lastErr = null;
+    for (let i = 0; i < ks.length; i++) {
+      const key = ks[(start + i) % ks.length];
+      let gotToken = false;
+      try {
+        for await (const ev of this.streamOne(key, opts)) {
+          gotToken = true;
+          yield ev;
+        }
+        this.pinKey(key);
+        return;
+      } catch (err) {
+        if (gotToken) throw err;              // ответ уже шёл — поздно менять ключ
+        if (opts.signal && opts.signal.aborted) throw err;
+        if (err && err.rotate) { lastErr = err; continue; } // → следующий ключ
+        throw err;
+      }
+    }
+    throw lastErr || new Error("XRouter: исчерпаны все ключи");
   }
 }
 

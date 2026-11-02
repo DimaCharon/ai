@@ -1,27 +1,23 @@
 /* ============================================================
-   council.js — CODE-РЕЖИМ: «совет» сильных моделей
+   council.js — КОД-РЕЖИМ: «совет» САМЫХ ЛУЧШИХ моделей
    ------------------------------------------------------------
-   Одна задача → несколько самых мощных БЕСПЛАТНЫХ моделей
-   думают параллельно → судья (самая сильная) сводит их ответы
-   в ОДИН итоговый вывод.
+   Одна задача → несколько сильнейших моделей думают параллельно
+   → судья (лучшая из доступных) сводит их ответы в ОДИН вывод.
 
-   Как работает:
-     1. Для каждой модели совета делаем ОДИН запрос (stream:false,
-        собираем полный текст) — параллельно, Promise.allSettled.
-     2. Судья получает: исходную задачу + все ответы моделей и
-        выдаёт единый финальный ответ (стримится в чат).
-     3. Возвращаем { finalText, members:[{id,name,text,ok}] }.
-
-   Модели совета — free-модели xkiro (там самые сильные бесплатные).
-   Состав выбирается динамически из живого списка: берём тех, кто
-   есть из списка приоритета, иначе — первые N доступных free.
+   Состав (собирается из того, что реально доступно на этом ПК):
+     • XRouter free — топ code-моделей (Qwen3 Coder, DeepSeek V4.1,
+       MiniMax M3, Qwen3.8 Max…);
+     • dahl.global — если есть ключ: MiniMax M2.7, DeepSeek V4 Flash;
+     • OpenRouter — если есть ключ: 2 сильнейших :free из живого списка.
+   Судья: MiniMax M2.7 (dahl), если ключ есть, иначе Qwen3.8 Max (free).
    ============================================================ */
 "use strict";
 
 const { ProviderError } = require("./providers/base");
+const store = require("./store");
 
-/** Приоритетный состав совета (code-ориентированные + сильные). */
-const COUNCIL_PRIORITY = [
+/** Приоритетные free-модели XRouter (code-ориентированные + сильные). */
+const XKIRO_PRIORITY = [
   "qwen/qwen3-coder-plus:free",
   "deepseek/deepseek-v4.1-flash:free",
   "minimax/minimax-m3:free",
@@ -29,30 +25,86 @@ const COUNCIL_PRIORITY = [
   "qwen/qwen3-max:free",
   "mistralai/mistral-large-2512",
 ];
-const DEFAULT_SIZE = 4;      // сколько моделей в совете
-const JUDGE_ID = "qwen/qwen3.8-max:free"; // судья (сильная, есть в free)
+/** Модели dahl (по ключу пользователя) — платные, сильные. */
+const DAHL_MODELS = [
+  "MiniMaxAI/MiniMax-M2.7",
+  "deepseek-ai/DeepSeek-V4-Flash-0731",
+];
+/** Сильные :free OpenRouter — берём первых найденных в живом списке. */
+const OR_PRIORITY = [
+  "deepseek/deepseek-chat-v3.1:free",
+  "deepseek/deepseek-r1:free",
+  "qwen/qwen3-coder:free",
+  "minimax/minimax-m2:free",
+  "meta-llama/llama-4-maverick:free",
+  "google/gemini-2.5-flash:free",
+  "mistralai/mistral-large-2512:free",
+  "anthropic/claude-sonnet-4.5:free",
+];
+const MAX_MEMBERS = 8; // совет не больше 8 моделей
 
 /**
- * Выбрать состав совета по живому free-списку xkiro.
- * @param {Array<{id:string}>} freeModels живой список
- * @returns {string[]} id моделей совета (N штук)
+ * Собрать состав совета из доступных провайдеров/ключей.
+ * @param {object} providers реестр {openrouter, dahl, arena, xkiro}
+ * @returns {Promise<{members:Array<{providerId,id,name}>, judge:{providerId,id,name}}>}
  */
-function pickCouncil(freeModels, size = DEFAULT_SIZE) {
-  const ids = new Set(freeModels.map((m) => m.id));
-  const chosen = COUNCIL_PRIORITY.filter((id) => ids.has(id));
-  if (chosen.length >= Math.min(size, ids.size)) return chosen.slice(0, size);
-  // добираем из живого списка, чего не хватает
-  for (const m of freeModels) {
-    if (chosen.length >= size) break;
-    if (!chosen.includes(m.id)) chosen.push(m.id);
+async function prepare(providers) {
+  const s = store.getSettings();
+  const members = [];
+  const add = (providerId, id, name) => {
+    if (!members.some((m) => m.providerId === providerId && m.id === id)) {
+      members.push({ providerId, id, name });
+    }
+  };
+
+  // 1) XRouter free (топ-приоритет по живому списку)
+  try {
+    const live = await providers.xkiro.listModels();
+    const ids = new Set(live.map((m) => m.id));
+    const picked = XKIRO_PRIORITY.filter((id) => ids.has(id));
+    if (picked.length) {
+      for (const id of picked) add("xkiro", id, id.split("/").pop().replace(":free", ""));
+    } else if (live.length) {
+      for (const m of live.slice(0, 4)) add("xkiro", m.id, m.name);
+    }
+  } catch { /* оффлайн — добавим по приоритету вслепую */
+    for (const id of XKIRO_PRIORITY.slice(0, 4)) add("xkiro", id, id.split("/").pop().replace(":free", ""));
   }
-  return chosen.slice(0, Math.max(2, size));
+
+  // 2) dahl (если ключ)
+  if (String(s.keys.dahl || "").trim()) {
+    for (const id of DAHL_MODELS) add("dahl", id, id.split("/").pop() + " · dahl");
+  }
+
+  // 3) OpenRouter free (если ключ) — 2 сильнейших из живого списка
+  if (String(s.keys.openrouter || "").trim()) {
+    try {
+      const live = await providers.openrouter.listModels();
+      const ids = new Set(live.map((m) => m.id));
+      let got = 0;
+      for (const id of OR_PRIORITY) {
+        if (got >= 2) break;
+        if (ids.has(id)) { add("openrouter", id, id.split("/").pop().replace(":free", "")); got++; }
+      }
+    } catch { /* сеть — пропускаем */ }
+  }
+
+  if (!members.length) {
+    throw new ProviderError("council", "Не удалось собрать совет: нет доступных моделей (нужен хотя бы ключ XRouter).");
+  }
+
+  // Судья: лучший из доступных
+  let judge;
+  if (String(s.keys.dahl || "").trim()) {
+    judge = { providerId: "dahl", id: DAHL_MODELS[0], name: DAHL_MODELS[0].split("/").pop() };
+  } else {
+    judge = { providerId: "xkiro", id: "qwen/qwen3.8-max:free", name: "Qwen3.8 Max" };
+  }
+
+  return { members: members.slice(0, MAX_MEMBERS), judge };
 }
 
-/**
- * Одиночный запрос модели → полный текст (без стрима в чат).
- * Использует streamChat провайдера, но просто собираем токены.
- */
+/** Одиночный запрос модели → полный текст (без стрима в чат). */
 async function askOne(provider, model, messages, signal) {
   let full = "";
   const controller = new AbortController();
@@ -77,51 +129,49 @@ async function askOne(provider, model, messages, signal) {
 }
 
 /**
- * CODE-РЕЖИМ: совет моделей → 1 вывод.
- * @param {object} provider xkiro-провайдер (должен быть с ключом)
- * @param {object} opts { messages, signal, onStatus, onToken, onCouncil }
- * @returns {Promise<{finalText:string, members:Array}>}
+ * КОД-РЕЖИМ: совет лучших моделей → 1 вывод.
+ * @param {object} providers реестр провайдеров
+ * @param {object} opts { members, judge, messages, signal, onStatus, onToken, onCouncil }
  */
-async function runCouncil(provider, { messages, signal, onStatus, onToken, onCouncil }) {
+async function runCouncil(providers, { members: inMembers, judge: inJudge, messages, signal, onStatus, onToken, onCouncil }) {
   const emitStatus = (text) => onStatus && onStatus({ text });
 
-  if (!provider.key) {
-    throw new ProviderError("no_key",
-      "Code-режиму нужен ключ XRouter (xkiro.com). Вставь XTROUTER_API_KEY в Настройки (⚙) → «Сохранить».");
+  let members = inMembers;
+  let judge = inJudge;
+  if (!members || !members.length || !judge) {
+    const p = await prepare(providers);
+    members = p.members;
+    judge = p.judge;
   }
 
-  // Живой состав совета
-  let freeModels = [];
-  try { freeModels = await provider.listModels(); } catch { /* оффлайн — пустой */ }
-  const council = pickCouncil(freeModels);
-  if (council.length < 2) {
-    throw new ProviderError("council",
-      "Не удалось собрать совет: доступно мало бесплатных моделей xkiro (нужно ≥2). Проверь ключ XRouter.");
-  }
-
-  const names = council.map((id) => id.split("/").pop().replace(":free", ""));
-  emitStatus(`Code-режим: думаю вместе ${council.length} моделей (${names.join(", ")})…`);
+  const names = members.map((m) => m.name);
+  emitStatus(`Код-режим: думаю вместе ${members.length} лучших моделей (${names.join(", ")})…`);
 
   // 1) совет думает параллельно
   const results = await Promise.allSettled(
-    council.map((id, i) =>
-      askOne(provider, id, messages, signal).then((r) => ({ id, name: names[i], ...r }))
+    members.map((m) =>
+      askOne(providers[m.providerId], m.id, messages, signal).then((r) => ({
+        id: m.id,
+        provider: m.providerId,
+        name: m.name,
+        ...r,
+      }))
     )
   );
-  const members = results.map((r, i) =>
-    r.status === "fulfilled" ? r.value : { id: council[i], name: names[i], ok: false, text: "", error: "сбой" }
+  const memberList = results.map((r, i) =>
+    r.status === "fulfilled" ? r.value : { id: members[i].id, provider: members[i].providerId, name: members[i].name, ok: false, text: "", error: "сбой" }
   );
-  const okCount = members.filter((m) => m.ok).length;
+  const okCount = memberList.filter((m) => m.ok).length;
   if (okCount === 0) {
-    throw new Error("Code-режим: ни одна модель совета не ответила. " +
-      members.map((m) => m.error).filter(Boolean).slice(0, 2).join(" | "));
+    throw new Error("Код-режим: ни одна модель совета не ответила. " +
+      memberList.map((m) => m.error).filter(Boolean).slice(0, 2).join(" | "));
   }
-  emitStatus(`Code-режим: собрано ответов ${okCount}/${council.length} — свожу в один вывод…`);
-  onCouncil && onCouncil(members);
+  emitStatus(`Код-режим: собрано ответов ${okCount}/${members.length} — свожу в один вывод (судья: ${judge.name})…`);
+  onCouncil && onCouncil(memberList);
 
   // 2) судья сводит в единый ответ
-  const answers = members.filter((m) => m.ok)
-    .map((m, i) => `--- Ответ ${i + 1} (модель: ${m.id}) ---\n${m.text.slice(0, 6000)}`)
+  const answers = memberList.filter((m) => m.ok)
+    .map((m, i) => `--- Ответ ${i + 1} (модель: ${m.id}, ${m.provider}) ---\n${m.text.slice(0, 6000)}`)
     .join("\n\n");
   const judgeMessages = [
     { role: "system", content:
@@ -136,7 +186,7 @@ async function runCouncil(provider, { messages, signal, onStatus, onToken, onCou
       `Дай единый итоговый ответ.` },
   ];
 
-  // судья — стримится в чат (onToken)
+  // судья — стримится в чат
   let finalText = "";
   const controller = new AbortController();
   const onAbort = () => controller.abort();
@@ -146,20 +196,23 @@ async function runCouncil(provider, { messages, signal, onStatus, onToken, onCou
   }
   const timeout = setTimeout(() => controller.abort(), 180000);
   try {
-    for await (const ev of provider.streamChat({ model: JUDGE_ID, messages: judgeMessages, signal: controller.signal })) {
+    for await (const ev of providers[judge.providerId].streamChat({ model: judge.id, messages: judgeMessages, signal: controller.signal })) {
       if (ev.type === "token") { finalText += ev.text; onToken && onToken(ev.text); }
     }
+  } catch (e) {
+    if (signal && signal.aborted) throw e;
+    if (!finalText.trim()) throw e;
   } finally {
     clearTimeout(timeout);
     if (signal) signal.removeEventListener("abort", onAbort);
   }
   if (!finalText.trim()) {
     // судья молчит — отдаём лучший из ответов совета как финал
-    const best = members.filter((m) => m.ok).sort((a, b) => b.text.length - a.text.length)[0];
-    finalText = best ? best.text : "Code-режим не собрал результат.";
+    const best = memberList.filter((m) => m.ok).sort((a, b) => b.text.length - a.text.length)[0];
+    finalText = best ? best.text : "Код-режим не собрал результат.";
   }
 
-  return { finalText, members };
+  return { finalText, members: memberList, judge };
 }
 
 function lastUserText(messages) {
@@ -167,7 +220,6 @@ function lastUserText(messages) {
     const m = messages[i];
     if (m.role !== "user") continue;
     if (Array.isArray(m.content)) {
-      // сообщение со скриншотом: content = [{type:'text'}, {type:'image_url'}]
       const parts = m.content.filter((p) => p && p.type === "text").map((p) => p.text).join("\n");
       if (parts) return parts;
     } else if (m.content) {
@@ -177,4 +229,4 @@ function lastUserText(messages) {
   return "";
 }
 
-module.exports = { runCouncil, pickCouncil, COUNCIL_PRIORITY, DEFAULT_SIZE, JUDGE_ID };
+module.exports = { runCouncil, prepare, XKIRO_PRIORITY, DAHL_MODELS, OR_PRIORITY, MAX_MEMBERS };

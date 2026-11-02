@@ -12,6 +12,7 @@
 
 const { app, BrowserWindow, ipcMain, screen, shell } = require("electron");
 const path = require("path");
+const crypto = require("crypto");
 
 const store = require("./src/main/store");
 const engine = require("./src/main/engine");
@@ -19,6 +20,9 @@ const fsSvc = require("./src/main/fs");
 const screenSvc = require("./src/main/screen");
 const connSvc = require("./src/main/connectors");
 const bridgeSvc = require("./src/main/bridge");
+const memory = require("./src/main/memory");
+const plugins = require("./src/main/plugins");
+const appself = require("./src/main/appself");
 
 let win = null;      // главное окно
 let overlay = null;  // оверлей маскота
@@ -183,6 +187,52 @@ function registerIpc() {
   ipcMain.handle("chat:get", (_e, id) => store.getChat(id));
   ipcMain.handle("chat:delete", (_e, id) => store.deleteChat(id));
   ipcMain.handle("chat:stop", (_e, chatId) => { engine.stopChat(chatId); return { ok: true }; });
+  ipcMain.handle("chat:confirmReply", (_e, actionId, ok) => engine.confirmReply(actionId, ok));
+
+  /* ---------- проекты (папка + своя память) ---------- */
+  ipcMain.handle("projects:list", () => store.getSettings().projects || []);
+  ipcMain.handle("projects:new", async (e, opts) => {
+    const w = BrowserWindow.fromWebContents(e.sender) || win;
+    const r = await fsSvc.pickDir(w);
+    if (!r || !r.ok || !r.path) return { ok: false, error: (r && r.error) || "Выбор папки отменён" };
+    const s = store.getSettings();
+    const name = String((opts && opts.name) || "").trim() || r.path.split(path.sep).filter(Boolean).pop() || "Проект";
+    const project = { id: crypto.randomUUID().slice(0, 8), name, dir: r.path, createdAt: Date.now() };
+    store.saveSettings({ projects: [...(s.projects || []), project] });
+    return { ok: true, project };
+  });
+  ipcMain.handle("projects:remove", (_e, id) => {
+    const s = store.getSettings();
+    store.saveSettings({ projects: (s.projects || []).filter((p) => p.id !== id) });
+    return { ok: true };
+  });
+
+  /* ---------- память ИИ (глобальная + проекта) ---------- */
+  ipcMain.handle("memory:get", (_e, target) => ({ target: target || "global", text: memory.read(target || "global") }));
+  ipcMain.handle("memory:save", (_e, target, text) => memory.save(target || "global", text));
+
+  /* ---------- плагины (установка по ссылке GitHub) ---------- */
+  ipcMain.handle("plugins:list", () => plugins.list());
+  ipcMain.handle("plugins:install", (_e, url) => plugins.install(url));
+  ipcMain.handle("plugins:remove", (_e, name) => plugins.remove(name));
+  ipcMain.handle("plugins:setEnabled", (_e, name, v) => plugins.setEnabled(name, v));
+  ipcMain.handle("plugins:commands", () => plugins.allCommands());
+
+  /* ---------- Self-режим: файлы самого приложения + рестарт ---------- */
+  ipcMain.handle("app:info", () => ({
+    dir: appself.appDir(),
+    writable: appself.writable(),
+    version: app.getVersion(),
+  }));
+  ipcMain.handle("app:relaunch", () => {
+    try {
+      app.relaunch();
+      app.quit();
+    } catch (e) {
+      return { ok: false, error: String(e.message || e) };
+    }
+    return { ok: true };
+  });
   ipcMain.handle("chat:send", async (e, payload) => {
     // Один AbortController на запрос: «Стоп» в UI прервёт его.
     // Движок сам регистрирует контроллер по chatId (engine.stopChat).

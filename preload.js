@@ -55,11 +55,44 @@ contextBridge.exposeInMainWorld("cc", {
     delete: (id) => ipcRenderer.invoke("chat:delete", id),
     send: (payload) => ipcRenderer.invoke("chat:send", payload),
     stop: (chatId) => ipcRenderer.invoke("chat:stop", chatId),
+    confirmReply: (actionId, ok) => ipcRenderer.invoke("chat:confirmReply", actionId, ok),
     onToken: (cb) => on("chat:token", cb),
     onStatus: (cb) => on("chat:status", cb),
     onDone: (cb) => on("chat:done", cb),
     onError: (cb) => on("chat:error", cb),
     onCouncil: (cb) => on("chat:council", cb),
+    onAction: (cb) => on("chat:action", cb),
+    onIter: (cb) => on("chat:iter", cb),
+    onCleanup: (cb) => on("chat:cleanup", cb),
+    onConfirm: (cb) => on("chat:confirm", cb),
+  },
+
+  /* ---------- проекты (папка + своя память) ---------- */
+  projects: {
+    list: () => ipcRenderer.invoke("projects:list"),
+    create: (name) => ipcRenderer.invoke("projects:new", { name }),
+    remove: (id) => ipcRenderer.invoke("projects:remove", id),
+  },
+
+  /* ---------- память ИИ ---------- */
+  memory: {
+    get: (target) => ipcRenderer.invoke("memory:get", target),
+    save: (target, text) => ipcRenderer.invoke("memory:save", target, text),
+  },
+
+  /* ---------- плагины ---------- */
+  plugins: {
+    list: () => ipcRenderer.invoke("plugins:list"),
+    install: (url) => ipcRenderer.invoke("plugins:install", url),
+    remove: (name) => ipcRenderer.invoke("plugins:remove", name),
+    setEnabled: (name, v) => ipcRenderer.invoke("plugins:setEnabled", name, v),
+    commands: () => ipcRenderer.invoke("plugins:commands"),
+  },
+
+  /* ---------- Self-режим (файлы приложения + перезапуск) ---------- */
+  app: {
+    info: () => ipcRenderer.invoke("app:info"),
+    relaunch: () => ipcRenderer.invoke("app:relaunch"),
   },
 
   /* ---------- коннекторы (GitHub / GitLab / Google Drive / …) ---------- */

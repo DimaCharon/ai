@@ -359,14 +359,29 @@
     if (pops.model.classList.contains("hidden")) openPop("model");
     else closePops();
   });
+  /** Проекты для фильтра истории. */
+  async function renderProjFilter() {
+    const sel = $("#hist-proj-filter");
+    if (!sel) return [];
+    const projects = await cc.projects.list().catch(() => []);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Все чаты (все проекты)</option>' +
+      projects.map((p) => `<option value="${escHtml(p.id)}">📁 ${escHtml(p.name)}</option>`).join("");
+    if (cur && projects.some((p) => p.id === cur)) sel.value = cur;
+    return projects;
+  }
+
   /** Список чатов в поповере «История» (открытие + после удаления). */
   async function renderHistory() {
     const list = $("#pop-history-list");
-    const chats = await cc.chat.list();
+    const [chats, projects] = await Promise.all([cc.chat.list(), renderProjFilter()]);
+    const filter = ($("#hist-proj-filter") || {}).value || "";
+    const projName = (id) => (projects.find((p) => p.id === id) || {}).name || "";
+    const shown = filter ? chats.filter((c) => c.project === filter) : chats;
     let html = `<div class="history-new"><button class="glass-btn pill-btn" id="hist-new">＋ Новый чат</button></div>`;
-    html += chats.length
-      ? chats.map((c) => `<div class="history-row" data-id="${c.id}" title="${escHtml(c.model)}">
-          <div class="m-info"><b>${escHtml(c.title)}</b><small>${escHtml(c.model)} · ${c.count} сообщ. · ${new Date(c.updatedAt).toLocaleDateString()}</small></div>
+    html += shown.length
+      ? shown.map((c) => `<div class="history-row" data-id="${c.id}" title="${escHtml(c.model)}">
+          <div class="m-info"><b>${escHtml(c.title)}${c.project ? ' <span class="hist-proj">📁 ' + escHtml(projName(c.project)) + "</span>" : ""}</b><small>${escHtml(c.model)} · ${c.count} сообщ. · ${new Date(c.updatedAt).toLocaleDateString()}</small></div>
           <button class="icon-btn hist-del" data-id="${c.id}" title="Удалить чат (в архив)">🗑</button>
         </div>`).join("")
       : `<div class="empty">Пока нет чатов — начни первый</div>`;
@@ -403,10 +418,41 @@
     if (pops.history.classList.contains("hidden")) openPop("history");
     renderHistory();
   });
+  $("#hist-proj-filter").addEventListener("change", () => renderHistory());
 
   /* ============================================================
      НАСТРОЙКИ (ключи, лимит, маскот, выход)
      ============================================================ */
+  /** Несколько ключей XRouter: строки + «＋ Ещё ключ» + удаление. */
+  function renderXkiroKeys(keys) {
+    const box = $("#xkiro-keys");
+    if (!box) return;
+    box.innerHTML = (keys.length ? keys : [""]).map((k, i) =>
+      `<div class="xkiro-key-row">
+         <span class="xkiro-key-idx">${i + 1}</span>
+         <input class="f-input" type="password" placeholder="XTROUTER_API_KEY (ключ ${i + 1})" value="${escHtml(k)}" spellcheck="false">
+         <button class="icon-btn xkiro-key-del" data-i="${i}" title="Убрать ключ" ${keys.length <= 1 ? "disabled" : ""}>×</button>
+       </div>`
+    ).join("");
+    [...box.querySelectorAll(".xkiro-key-del")].forEach((b) =>
+      b.addEventListener("click", () => renderXkiroKeys(collectXkiroKeys().filter((_, j) => j !== Number(b.dataset.i))))
+    );
+  }
+  /** Все значения (включая пустые — для корректных индексов при удалении). */
+  function collectXkiroAll() {
+    const box = $("#xkiro-keys");
+    if (!box) return [];
+    return [...box.querySelectorAll("input")].map((i) => i.value.trim());
+  }
+  /** Только непустые (для сохранения). */
+  function collectXkiroKeys() {
+    return collectXkiroAll().filter(Boolean);
+  }
+  $("#xkiro-add-key").addEventListener("click", () => {
+    const cur = collectXkiroAll();
+    renderXkiroKeys([...cur, ""]);
+  });
+
   $("#btn-settings").addEventListener("click", async (e) => {
     e.stopPropagation();
     if (pops.settings.classList.contains("hidden")) {
@@ -414,7 +460,7 @@
       $("#key-or").value = s.keys.openrouter || "";
       $("#key-dahl").value = s.keys.dahl || "";
       $("#key-arena").value = s.keys.arenaCookie || "";
-      $("#key-xkiro").value = s.keys.xkiro || "";
+      renderXkiroKeys(s.keys.xkiro || []);
       $("#key-github").value = s.keys.github || "";
       $("#key-gitlab").value = s.keys.gitlab || "";
       $("#set-arena-limit").value = s.arenaLimit;
@@ -422,6 +468,8 @@
       $("#set-mascot-anim").checked = s.mascotAnim !== false;
       $("#set-chime").checked = s.chimeOnDone !== false;
       $("#set-mascot-scale").value = String(s.mascotScale || 1);
+      const bvis = $("#set-browser-visible");
+      if (bvis) bvis.checked = s.browserVisible !== false;
       openPop("settings");
     } else closePops();
   });
@@ -431,7 +479,7 @@
         openrouter: $("#key-or").value.trim(),
         dahl: $("#key-dahl").value.trim(),
         arenaCookie: $("#key-arena").value.trim(),
-        xkiro: $("#key-xkiro").value.trim(),
+        xkiro: collectXkiroKeys(), // массив: несколько ключей с авто-переключением
         github: $("#key-github").value.trim(),
         gitlab: $("#key-gitlab").value.trim(),
       },
@@ -441,6 +489,7 @@
       mascotScale: Math.min(2, Math.max(0.6, Number($("#set-mascot-scale").value) || 1)),
       chimeOnDone: $("#set-chime").checked,
       showMascotOnDone: $("#set-mascot").checked,
+      browserVisible: $("#set-browser-visible") ? $("#set-browser-visible").checked : true,
     });
     closePops();
     toast("Настройки сохранены (только на этом ПК)");
@@ -468,11 +517,17 @@
     $("#pane-files").classList.toggle("hidden", pane !== "files");
     $("#pane-term").classList.toggle("hidden", pane !== "term");
     $("#pane-conn").classList.toggle("hidden", pane !== "conn");
+    $("#pane-plugins").classList.toggle("hidden", pane !== "plugins");
+    $("#pane-memory").classList.toggle("hidden", pane !== "memory");
     $("#dt-files").classList.toggle("active", pane === "files");
     $("#dt-term").classList.toggle("active", pane === "term");
     $("#dt-conn").classList.toggle("active", pane === "conn");
+    $("#dt-plugins").classList.toggle("active", pane === "plugins");
+    $("#dt-memory").classList.toggle("active", pane === "memory");
     if (pane === "files" && !Files.dir && !Files.loading) Files.loadDir();
     if (pane === "conn") openConnPane();
+    if (pane === "plugins") renderPlugins();
+    if (pane === "memory") openMemoryPane();
   }
   $("#btn-files").addEventListener("click", () => openDrawer("files"));
   $("#btn-term").addEventListener("click", () => openDrawer("term"));
@@ -480,7 +535,103 @@
   $("#dt-files").addEventListener("click", () => openDrawer("files"));
   $("#dt-term").addEventListener("click", () => openDrawer("term"));
   $("#dt-conn").addEventListener("click", () => openDrawer("conn"));
+  $("#dt-plugins").addEventListener("click", () => openDrawer("plugins"));
+  $("#dt-memory").addEventListener("click", () => openDrawer("memory"));
   $("#dt-close").addEventListener("click", () => drawer.classList.add("hidden"));
+
+  /* ---------- Плагины: установка по ссылке, список, вкл/выкл ---------- */
+  async function renderPlugins() {
+    const list = $("#plug-list");
+    if (!list) return;
+    const plugins = await cc.plugins.list().catch(() => []);
+    if (!plugins.length) {
+      list.innerHTML = '<div class="empty">Плагинов пока нет — вставь ссылку выше.</div>';
+      return;
+    }
+    list.innerHTML = plugins
+      .map(
+        (p) => `<div class="plug-card${p.broken ? " broken" : ""}">
+          <div class="plug-head">
+            <label class="plug-toggle"><input type="checkbox" data-name="${escHtml(p.name)}" ${p.enabled ? "checked" : ""} ${p.broken ? "disabled" : ""}></label>
+            <b>${escHtml(p.name)}</b><span class="plug-ver">v${escHtml(p.version)}</span>
+            ${p.commands && p.commands.length ? `<span class="plug-cmds">${p.commands.map((c) => "/" + escHtml(c.name)).join("  ")}</span>` : ""}
+            <button class="icon-btn plug-del" data-name="${escHtml(p.name)}" title="Удалить плагин">🗑</button>
+          </div>
+          ${p.description ? `<div class="plug-desc">${escHtml(p.description)}</div>` : ""}
+        </div>`
+      )
+      .join("");
+    [...list.querySelectorAll("input.plug-toggle")].forEach((c) =>
+      c.addEventListener("change", async () => {
+        await cc.plugins.setEnabled(c.dataset.name, c.checked);
+        toast("Плагин «" + c.dataset.name + "» " + (c.checked ? "включён" : "выключен"));
+      })
+    );
+    [...list.querySelectorAll(".plug-del")].forEach((b) =>
+      b.addEventListener("click", async () => {
+        const ok = await confirm("Удалить плагин «" + b.dataset.name + "»?", "Команды плагина исчезнут из чата. Файлы удалятся с этого ПК.", "Удалить");
+        if (!ok) return;
+        await cc.plugins.remove(b.dataset.name);
+        renderPlugins();
+      })
+    );
+  }
+  $("#plug-install").addEventListener("click", async () => {
+    const url = $("#plug-url").value.trim();
+    const msg = $("#plug-msg");
+    if (!url) {
+      msg.textContent = "Вставь ссылку на GitHub-репозиторий с плагином.";
+      return;
+    }
+    msg.textContent = "Скачиваю и устанавливаю…";
+    msg.className = "f-hint small";
+    const r = await cc.plugins.install(url);
+    if (r && r.ok) {
+      msg.textContent = "✓ Установлен: " + r.plugin.name + " v" + r.plugin.version + (r.plugin.commands.length ? " (/" + r.plugin.commands.map((c) => c.name).join(", /") + ")" : "");
+      msg.className = "f-hint small ok";
+      $("#plug-url").value = "";
+      renderPlugins();
+    } else {
+      msg.textContent = "✗ " + ((r && r.error) || "Не удалось установить");
+      msg.className = "f-hint small err";
+    }
+  });
+
+  /* ---------- Память: глобальная + проекта ---------- */
+  async function openMemoryPane() {
+    const g = $("#mem-global");
+    const p = $("#mem-project");
+    const lbl = $("#mem-proj-label");
+    if (!g || !p || !lbl) return;
+    const [gRes, projId] = await Promise.all([cc.memory.get("global"), Promise.resolve(window.CC.Project ? window.CC.Project.id() : null)]);
+    g.value = (gRes && gRes.text) || "";
+    if (projId) {
+      const projects = await cc.projects.list().catch(() => []);
+      const pr = projects.find((x) => x.id === projId);
+      const prRes = await cc.memory.get(projId);
+      lbl.textContent = "Память проекта: " + (pr ? pr.name : projId);
+      p.value = (prRes && prRes.text) || "";
+      p.disabled = false;
+      p.placeholder = "Память только для этого проекта";
+    } else {
+      lbl.textContent = "Память проекта: — (выбери проект в чате)";
+      p.value = "";
+      p.disabled = true;
+    }
+  }
+  if (window.CC && window.CC.Project) {
+    window.CC.Project.onChange = async (projId) => {
+      // вкладка «Память» открыта? — обновим
+      const pane = $("#pane-memory");
+      if (pane && !pane.classList.contains("hidden")) openMemoryPane();
+    };
+  }
+  $("#mem-save").addEventListener("click", async () => {
+    await cc.memory.save("global", $("#mem-global").value);
+    const projId = window.CC.Project ? window.CC.Project.id() : null;
+    if (projId && !$("#mem-project").disabled) await cc.memory.save(projId, $("#mem-project").value);
+    toast("Память сохранена (на этом ПК)");
+  });
 
   /* ---------- Файлы ---------- */
   const Files = {

@@ -105,10 +105,12 @@ const DEFAULT_SETTINGS = {
     openrouter: "",    // ключ OpenRouter (бесплатные модели)
     dahl: "",          // ключ inference.dahl.global
     arenaCookie: "",   // сессионная кука Arena AI (arena.ai)
-    xkiro: "",         // XTROUTER_API_KEY (api.xkiro.com)
+    xkiro: [],         // XTROUTER_API_KEY (api.xkiro.com) — МАССИВ ключей:
+                       // если лимит на одном кончился, авто-переключение на другой
     github: "",        // GitHub Personal Access Token (коннектор)
     gitlab: "",        // GitLab Access Token (коннектор)
   },
+  xkiroKeyIdx: 0,      // с какого ключа xkiro продолжаем (авто-ротация)
   connectors: {},      // конфиги коннекторов: { github: {token}, googledrive: {...} }
   model: {
     provider: "openrouter", // openrouter | dahl | arena | xkiro
@@ -120,17 +122,34 @@ const DEFAULT_SETTINGS = {
   mascotScale: 1,        // размер маскота: 0.8 / 1 / 1.4
   showMascotOnDone: true, // оверлей при завершении задачи (только когда не в фокусе)
   chimeOnDone: true,     // тихий чим при завершении задачи
+  browserVisible: true,  // инкогнито-браузер ИИ: видимое окно (false — тихо в фоне)
+  projects: [],          // проекты: [{id, name, dir}] — своя память + папка
+  plugins: {},           // плагины: { name: enabled }
 };
+
+/** Привести xkiro-ключ к массиву (миграция из одиночной строки). */
+function normXkiro(v) {
+  if (Array.isArray(v)) return v.map((k) => String(k || "").trim().replace(/^bearer\s+/i, "")).filter(Boolean);
+  if (typeof v === "string") {
+    const k = v.trim().replace(/^bearer\s+/i, "");
+    return k ? [k] : [];
+  }
+  return [];
+}
 
 function getSettings() {
   const s = readJSON(SETTINGS_FILE(), {});
-  return {
+  const merged = {
     ...DEFAULT_SETTINGS,
     ...s,
     keys: { ...DEFAULT_SETTINGS.keys, ...(s.keys || {}) },
     model: { ...DEFAULT_SETTINGS.model, ...(s.model || {}) },
     connectors: { ...(s.connectors || {}) },
   };
+  merged.keys.xkiro = normXkiro(merged.keys.xkiro);
+  merged.projects = Array.isArray(s.projects) ? s.projects : [];
+  merged.plugins = { ...(s.plugins || {}) };
+  return merged;
 }
 function saveSettings(patch) {
   const merged = { ...getSettings(), ...patch };

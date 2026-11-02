@@ -1,18 +1,21 @@
 /* ============================================================
-   engine.js — движок запросов «1 нажатие = 1 гарантированный ответ»
+   engine.js — движок «1 нажатие = 1 гарантированный ответ» +
+   АГЕНТСКАЯ ПЕТЛЯ (инструменты ИИ)
    ------------------------------------------------------------
-   • Экспоненциальный backoff + джиттер, до 10 попыток.
-   • Если нейросеть тормозит, рвёт соединение или отвечает с
-     задержкой — запрос НЕ сбрасывается: мы переподключаемся
-     и добираем полный ответ. UI показывает:
-     «Ожидание ответа… Попытка 2/10 (Arena AI отвечает с
-      задержкой, повторяем запрос)».
-   • АУТО-МИГРАЦИЯ ЧАТА: когда чат наполнен до лимита,
-     движок САМ:
-       1) создаёт новый чат (у Arena — реальный, на сайте);
-       2) проверяет, что новый чат отвечает (тестовый запрос);
-       3) копирует туда историю;
-       4) убедившись, что новый работает — удаляет старый.
+   Движок:
+     • Экспоненциальный backoff + джиттер, до 10 попыток.
+     • АУТО-МИГРАЦИЯ ЧАТА при лимите (создал → проверил →
+       скопировал → удалил старый).
+   Агentic-петля (v1.0.8):
+     • Модель вставляет блоки-команды (```read:```, ```edit:```,
+       ```browse:```, ```remember:```, ```list:```) → движок
+       исполняет их и возвращает результат модели → повторяет,
+       пока задача не выполнена (до 6 итераций / 5 минут).
+     • Файлы: только в пределах прикреплённой папки (в Self-режиме
+       — папки самого приложения).
+     • Браузер: ТОЛЬКО инкогнито, окно закрывается после каждой
+       страницы и после каждого промта.
+     • Правки файлов — только с подтверждением в UI.
    ============================================================ */
 "use strict";
 
@@ -24,9 +27,16 @@ const { Arena } = require("./providers/arena");
 const { Xkiro } = require("./providers/xkiro");
 const { ProviderError } = require("./providers/base");
 const council = require("./council");
+const agents = require("./agents");
+const memory = require("./memory");
+const plugins = require("./plugins");
+const browserSvc = require("./browser");
+const appself = require("./appself");
 
 const MAX_ATTEMPTS = 10;
 const ATTEMPT_TIMEOUT_MS = 90000; // таймаут одной попытки
+const AGENT_MAX_ITER = 6;         // максимум итераций агentic-петли
+const AGENT_BUDGET_MS = 5 * 60 * 1000; // 5 минут на инструменты в одном промте
 
 /** Реестр провайдеров. Новый провайдер = require + одна строка. */
 const providers = {
@@ -35,7 +45,6 @@ const providers = {
   arena: new Arena(),
   xkiro: new Xkiro(),
 };
-// у Arena лимит читается из настроек на лету
 Object.defineProperty(providers.arena, "limit", {
   get() { return providers.arena.realLimit; },
 });
@@ -61,12 +70,6 @@ function friendly(err, providerName) {
 /* ============================================================
    ДВИЖОК: 1 нажатие = 1 ответ
    ============================================================ */
-/**
- * @param {object} provider провайдер
- * @param {object} opts { model, messages, signal, maxAttempts,
- *                        onToken(text), onStatus({text, attempt, restart}) }
- * @returns {Promise<{ok:true, text, attempts}|{ok:false, code, message, aborted?}>}
- */
 async function runRequest(provider, opts) {
   const { model, messages, signal, onToken, onStatus } = opts;
   const maxAttempts = opts.maxAttempts || MAX_ATTEMPTS;
@@ -81,7 +84,6 @@ async function runRequest(provider, opts) {
 
     let full = "";
     let emitted = false;
-    // общая отмена (кнопка «Стоп») + таймаут одной попытки
     const controller = new AbortController();
     const onOuterAbort = () => controller.abort();
     if (signal) {
@@ -102,8 +104,6 @@ async function runRequest(provider, opts) {
       return { ok: true, text: full, attempts: attempt };
     } catch (err) {
       if (signal && signal.aborted) return { ok: false, code: "aborted", aborted: true };
-      // Ошибки, на которые повторять бессмысленно (модель на обслуживании,
-      // капча, неверный ключ) — сразу диагностика, без 10 попыток.
       if (err && err.noRetry) {
         return { ok: false, code: err.code || "provider", message: err.message, retryable: false };
       }
@@ -118,8 +118,7 @@ async function runRequest(provider, opts) {
         };
       }
       if (emitted) {
-        // ответ уже начал печататься, но оборвался — чистим и собираем заново
-        onStatus({ restart: true, text: friendly(err, provider.name) + ". Собираю ответ заново (попытка " + (attempt + 1) + "/" + maxAttempts + ")…" });
+        onStatus({ restart: true, text: friendly(err, providerName(provider)) + ". Собираю ответ заново (попытка " + (attempt + 1) + "/" + maxAttempts + ")…" });
       } else {
         const wait = Math.round(backoff(attempt) / 1000);
         onStatus({ text: friendly(err, provider.name) + " — повтор через " + wait + " с (попытка " + (attempt + 1) + "/" + maxAttempts + ")" });
@@ -133,17 +132,92 @@ async function runRequest(provider, opts) {
   return { ok: false, code: "max_retries", message: "Движок остановлен" };
 }
 
+function providerName(p) {
+  return p.name || p.id || "провайдер";
+}
+
 /* ============================================================
-   ЧАТЫ: отправка + авто-миграция
+   ПОДТВЕРЖДЕНИЯ (правка файлов из чата)
    ============================================================ */
-/** Контроллеры отмены: chatId -> AbortController */
+const pendingConfirms = new Map(); // actionId -> resolve
+
+/** UI ответил на подтверждение (chat:confirmReply). */
+function confirmReply(actionId, ok) {
+  const r = pendingConfirms.get(actionId);
+  if (r) {
+    pendingConfirms.delete(actionId);
+    r(!!ok);
+    return { ok: true };
+  }
+  return { ok: false, error: "Подтверждение не найдено (истекло)" };
+}
+
+function askConfirm(win, chatId, title, detail, preview) {
+  const actionId = crypto.randomUUID();
+  safeSend(win, "chat:confirm", { chatId, actionId, title, detail, preview: preview || "" });
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      pendingConfirms.delete(actionId);
+      resolve(false); // 3 мин без ответа — не пишем
+    }, 180000);
+    pendingConfirms.set(actionId, (ok) => {
+      clearTimeout(t);
+      resolve(ok);
+    });
+  });
+}
+
+/* ============================================================
+   КОНТЕКСТ: память + проект + файлы + плагины + инструменты
+   ============================================================ */
+function buildContextText({ mode, root, project }) {
+  let ctx = "Ты — Charon Code, десктопный AI-агент, работающий на ПК пользователя. Отвечай на языке пользователя (по умолчанию русский). Пиши кратко и по делу.\n";
+  const memG = memory.read("global");
+  if (memG.trim()) ctx += "ГЛОБАЛЬНАЯ ПАМЯТЬ (у тебя всегда, во всех чатах):\n" + memG.trim().slice(0, 4000) + "\n";
+  if (project) {
+    ctx += "Текущий ПРОЕКТ: «" + project.name + "» (папка: " + project.dir + ")\n";
+    const memP = memory.read(project.id);
+    if (memP.trim()) ctx += "ПАМЯТЬ ПРОЕКТА «" + project.name + "»:\n" + memP.trim().slice(0, 4000) + "\n";
+  }
+  if (root) {
+    const fc = agents.buildFolderContext(root);
+    if (fc.tree) ctx += "ФАЙЛЫ В ПАПКЕ (" + root + "):\n" + fc.tree + "\n";
+    if (fc.files) ctx += "СОДЕРЖИМОЕ ТЕКСТОВЫХ ФАЙЛОВ (уже у тебя в контексте — перечитывать через ```read:``` не обязательно):\n" + fc.files + "\n";
+  }
+  if (mode === "self") {
+    ctx += "РЕЖИМ САМО-ПРИЛОЖЕНИЯ: ты дорабатываешь сам Charon Code (его файлы в контексте выше). После правок пользователь нажмёт «Перезапустить» — правки вступят в силу. Не ломай структуру: правь точечно.\n";
+  }
+  const pc = plugins.contextForPrompt();
+  if (pc) ctx += "УСТАНОВЛЕННЫЕ ПЛАГИНЫ (их команды доступны пользователю как /имя):\n" + pc + "\n";
+  ctx += agents.abilitiesPrompt(root, mode === "self");
+  return ctx;
+}
+
+/** Arena принимает ТОЛЬКО последнее пользовательское сообщение —
+   весь контекст и хвост разговора вкладываем в него. */
+function arenaMessage(ctxText, msgs) {
+  const tail = msgs.slice(-8)
+    .filter((m) => !Array.isArray(m.content))
+    .map((m) => (m.role === "user" ? "Я: " : "Charon: ") + String(m.content).slice(0, 4000))
+    .join("\n\n");
+  return (
+    "[КОНТЕКСТ СИСТЕМЫ — это инструкции, память и файлы для работы, не текст пользователя]\n" +
+    ctxText +
+    "\n\n[НАШ РАЗГОВОР (конец)]:\n" +
+    (tail || "(начало разговора)") +
+    "\n\nОтветь на последнее сообщение (от «Я») обычным текстом."
+  );
+}
+
+/* ============================================================
+   ЧАТЫ: отправка + авто-миграция + агentic-петля
+   ============================================================ */
 const stopControllers = new Map();
 function stopChat(chatId) {
   const c = stopControllers.get(chatId);
   if (c) c.abort();
 }
 
-/** Краткая история для контекста нового чата. */
 function buildSummary(msgs) {
   const fmt = (m) => (m.role === "user" ? "Я: " : "Charon: ") + String(m.content || "").slice(0, 300);
   const first = msgs.slice(0, 2).map(fmt);
@@ -153,16 +227,17 @@ function buildSummary(msgs) {
 
 /**
  * Полный цикл отправки:
- *  проверка провайдера → чат (новый/существующий) → лимит?
- *  → авто-миграция → запрос движком → сохранение.
+ *  проверка провайдера → чат → лимит? авто-миграция → запрос →
+ *  АГЕНТИЧЕСКАЯ ПЕТЛЯ (блоки-команды) → сохранение.
  */
 async function sendChat(win, payload, signal) {
-  const { chatId: inChatId, providerId, modelId, text, screen: screenIn } = payload;
+  const {
+    chatId: inChatId, providerId, modelId, text: rawText, screen: screenIn,
+    mode = "chat", projectId = null, attachedDir = null, pluginCmd = null,
+  } = payload;
   const provider = providers[providerId];
   if (!provider) throw new ProviderError("unknown", "Неизвестный провайдер: " + providerId);
 
-  /* Экран: микроскриншот прикладывается только к ВИДЯЩИМ моделям
-     (OpenAI-формат: content = [{text}, {image_url: data-URI}]). */
   const screenData =
     screenIn && screenIn.dataUrl && provider.supportsVision(modelId) ? screenIn : null;
 
@@ -174,142 +249,274 @@ async function sendChat(win, payload, signal) {
     error: (e) => safeSend(win, "chat:error", { chatId, ...e }),
   };
 
-  /* 1. Доступность провайдера (ключ/сессия) */
   try {
-    await provider.check();
-  } catch (err) {
-    emit.error({
-      code: err.code || "provider",
-      message: err.message,
-      retryable: ["no_key", "no_cookie", "session_expired", "network"].includes(err.code),
-    });
-    return null;
-  }
-
-  /* 2. Чат: существующий или новый */
-  let chat = inChatId ? store.getChat(inChatId) : null;
-  let createdRemote = false;
-  if (!chat) {
-    chat = store.newChat({ provider: providerId, model: modelId, title: text.slice(0, 48) });
-    chatId = chat.id;
-    emit.status({ text: "Новый чат создан (" + provider.name + ")" });
-    // У Arena создаём РЕАЛЬНЫЙ чат на сайте
+    /* 1. Доступность провайдера */
     try {
-      const remote = await provider.createChat({ model: modelId });
-      if (remote && remote.id) { chat.remoteId = remote.id; createdRemote = true; }
-    } catch { /* локальный режим — не фатально */ }
-    store.saveChat(chat);
-  }
-  chat.messages.push({ role: "user", content: text, at: Date.now(), screen: !!screenData, code: !!payload.codeMode });
-  if (screenIn && !screenData) {
-    emit.status({ text: "Модель " + modelId + " не видит изображения — шлю без скриншота. Выбери модель с меткой 👁 (XRouter/OpenRouter)." });
-  }
-
-  /* 3. Лимит чата → авто-миграция (копирую → проверяю → удаляю старый) */
-  let migratedFrom = null;
-  if (chat.messages.length >= provider.limit) {
-    emit.status({ text: `Лимит чата достигнут (${chat.messages.length}/${provider.limit} сообщений) — начинаю перенос: создаю новый чат…` });
-    try {
-      const next = await migrateChat(win, chat, provider, signal);
-      migratedFrom = chat.id;
-      chat = next;
-      chatId = chat.id;
+      await provider.check();
     } catch (err) {
-      if (signal && signal.aborted) return null;
-      emit.status({ text: "Перенос не удался (" + String(err.message || err).slice(0, 80) + ") — продолжаю в текущем чате" });
-    }
-  }
-
-  /* 4. Запрос движком.
-     Месседжи для провайдера: история как есть, а в ПОСЛЕДНЕЕ
-     сообщение пользователя вложен свежий микроскриншот (если есть). */
-  const buildProviderMessages = (msgs) => {
-    let lastUserIdx = -1;
-    msgs.forEach((m, i) => { if (m.role === "user") lastUserIdx = i; });
-    return msgs.map((m, i) => {
-      if (screenData && i === lastUserIdx && m.role === "user") {
-        return {
-          role: "user",
-          content: [
-            { type: "text", text: String(m.content) },
-            { type: "image_url", image_url: { url: screenData.dataUrl } },
-          ],
-        };
-      }
-      return { role: m.role, content: String(m.content) };
-    });
-  };
-
-  stopControllers.set(chatId, signal);
-
-  let finalText = "";
-  let attempts = 1;
-  let councilMembers = null;
-
-  if (payload.codeMode) {
-    /* ============ CODE-РЕЖИМ ============
-       Совет самых мощных бесплатных моделей (XRouter free) думает
-       параллельно → судья сводит всё в ОДИН вывод. Не зависит от
-       выбранной в UI модели — совет собирается из живого free-списка. */
-    const xk = providers.xkiro;
-    try { await xk.check(); } catch (err) {
-      stopControllers.delete(chatId);
       emit.error({
-        code: err.code || "council",
-        message: "Code-режим: " + err.message,
-        retryable: ["no_key", "network"].includes(err.code),
+        code: err.code || "provider",
+        message: err.message,
+        retryable: ["no_key", "no_cookie", "session_expired", "network"].includes(err.code),
       });
-      return chat;
+      return null;
     }
-    try {
-      const out = await council.runCouncil(xk, {
-        messages: buildProviderMessages(chat.messages),
-        signal,
-        onStatus: (s) => emit.status(s),
-        onToken: (t) => emit.token(t),
-        onCouncil: (members) => safeSend(win, "chat:council", { chatId, members }),
-      });
-      finalText = out.finalText;
-      councilMembers = out.members;
-    } catch (err) {
-      stopControllers.delete(chatId);
-      if (signal && signal.aborted) { emit.status({ text: "Остановлено пользователем" }); return chat; }
-      emit.error({ code: "council", message: String(err.message || err).slice(0, 300), retryable: true });
-      return chat;
-    }
-  } else {
-    const res = await runRequest(provider, {
-      model: modelId,
-      messages: buildProviderMessages(chat.messages),
-      signal,
-      chatId: chat.remoteId || undefined,
-      onToken: (t) => emit.token(t),
-      onStatus: (s) => emit.status(s),
-    });
-    if (!res.ok) {
-      stopControllers.delete(chatId);
-      if (res.aborted) { emit.status({ text: "Остановлено пользователем" }); return chat; }
-      emit.error({ code: res.code, message: res.message, retryable: true });
-      return chat;
-    }
-    finalText = res.text;
-    attempts = res.attempts;
-  }
-  stopControllers.delete(chatId);
 
-  chat.messages.push({ role: "assistant", content: finalText, at: Date.now(), council: councilMembers || undefined });
-  store.saveChat(chat);
-  emit.done({ text: finalText, attempts, migratedFrom, chatId, providerId, modelId, codeMode: !!payload.codeMode, council: councilMembers || undefined });
-  return chat;
+    /* 2. Чат */
+    let chat = inChatId ? store.getChat(inChatId) : null;
+    if (!chat) {
+      chat = store.newChat({ provider: providerId, model: modelId, title: rawText.slice(0, 48) });
+      chatId = chat.id;
+      chat.project = projectId || null;
+      emit.status({ text: "Новый чат создан (" + provider.name + ")" });
+      try {
+        const remote = await provider.createChat({ model: modelId });
+        if (remote && remote.id) chat.remoteId = remote.id;
+      } catch { /* локальный режим */ }
+      store.saveChat(chat);
+    } else if (projectId != null) {
+      chat.project = projectId || null;
+    }
+
+    /* Плагин-команда: /имя аргументы → prompt-шаблон */
+    let text = rawText;
+    let pluginMeta = null;
+    if (pluginCmd && pluginCmd.name) {
+      const rc = plugins.resolveCommand(pluginCmd.name, pluginCmd.args);
+      if (!rc.ok) {
+        emit.error({ code: "plugin", message: rc.error, retryable: false });
+        return chat;
+      }
+      text = rc.prompt;
+      pluginMeta = { plugin: rc.plugin, command: rc.command };
+    }
+
+    chat.messages.push({
+      role: "user", content: rawText, at: Date.now(),
+      screen: !!screenData, code: mode === "code", self: mode === "self",
+      project: projectId || null, plugin: pluginMeta || undefined,
+    });
+    if (screenIn && !screenData) {
+      emit.status({ text: "Модель " + modelId + " не видит изображения — шлю без скриншота. Выбери модель с меткой 👁 (XRouter/OpenRouter)." });
+    }
+
+    /* Проект и корень инструментов */
+    const s = store.getSettings();
+    const project = (s.projects || []).find((p) => p.id === projectId) || null;
+    const isSelf = mode === "self";
+    const appDir = isSelf ? appself.appDir() : null;
+    const root = isSelf ? appDir : (attachedDir || null);
+    if (isSelf && !appDir) {
+      emit.error({ code: "self", message: "Self-режим: файлы приложения не найдены (ожидалась папка resources/app).", retryable: false });
+      return chat;
+    }
+    if (isSelf && appDir && !appself.writable(appDir)) {
+      emit.status({ text: "⚠ Self: каталог приложения доступен только для чтения. Чтобы правки сохранялись — установи Charon Code не в Program Files (свой каталог) или запусти от администратора." });
+    }
+
+    const ctxText = buildContextText({ mode, root, project });
+
+    /* 3. Лимит чата → авто-миграция */
+    if (chat.messages.length >= provider.limit) {
+      emit.status({ text: `Лимит чата достигнут (${chat.messages.length}/${provider.limit}) — перенос: создаю новый чат…` });
+      try {
+        const next = await migrateChat(win, chat, provider, signal);
+        chat = next;
+        chatId = chat.id;
+      } catch (err) {
+        if (signal && signal.aborted) return null;
+        emit.status({ text: "Перенос не удался (" + String(err.message || err).slice(0, 80) + ") — продолжаю в текущем чате" });
+      }
+    }
+
+    /* 4. Сообщения для провайдера */
+    const buildProviderMessages = (msgs) => {
+      if (providerId === "arena") {
+        return [{ role: "user", content: arenaMessage(ctxText, msgs) }];
+      }
+      let lastUserIdx = -1;
+      msgs.forEach((m, i) => { if (m.role === "user" && !m.system) lastUserIdx = i; });
+      return [
+        { role: "system", content: ctxText },
+        ...msgs.map((m, i) => {
+          if (screenData && i === lastUserIdx && m.role === "user") {
+            return {
+              role: "user",
+              content: [
+                { type: "text", text: String(m.content) },
+                { type: "image_url", image_url: { url: screenData.dataUrl } },
+              ],
+            };
+          }
+          return { role: m.role, content: String(m.content) };
+        }),
+      ];
+    };
+
+    stopControllers.set(chatId, signal);
+    const startedAt = Date.now();
+
+    try {
+      let finalText = "";
+      let councilMembers = null;
+      let judgeModel = null;
+
+      if (mode === "code") {
+        /* ============ КОД-РЕЖИМ ============
+           Совет САМЫХ ЛУЧШИХ доступных моделей (XRouter free +
+           dahl/OpenRouter по ключам) → судья сводит в ОДИН вывод. */
+        let prep = null;
+        try { prep = await council.prepare(providers); } catch (err) {
+          emit.error({ code: "council", message: "Код-режим: " + (err.message || err), retryable: true });
+          return chat;
+        }
+        judgeModel = prep.judge;
+        try {
+          const out = await council.runCouncil(providers, {
+            members: prep.members,
+            judge: prep.judge,
+            messages: buildProviderMessages(chat.messages),
+            signal,
+            onStatus: (st) => emit.status(st),
+            onToken: (t) => emit.token(t),
+            onCouncil: (members) => safeSend(win, "chat:council", { chatId, members }),
+          });
+          finalText = out.finalText;
+          councilMembers = out.members;
+        } catch (err) {
+          if (signal && signal.aborted) { emit.status({ text: "Остановлено пользователем" }); return chat; }
+          emit.error({ code: "council", message: String(err.message || err).slice(0, 300), retryable: true });
+          return chat;
+        }
+      } else {
+        const res = await runRequest(provider, {
+          model: modelId,
+          messages: buildProviderMessages(chat.messages),
+          signal,
+          chatId: chat.remoteId || undefined,
+          onToken: (t) => emit.token(t),
+          onStatus: (st) => emit.status(st),
+        });
+        if (!res.ok) {
+          if (res.aborted) { emit.status({ text: "Остановлено пользователем" }); return chat; }
+          emit.error({ code: res.code, message: res.message, retryable: true });
+          return chat;
+        }
+        finalText = res.text;
+      }
+
+      /* ============ АГЕНТИЧЕСКАЯ ПЕТЛЯ ============
+         Блоки-команды в ответе → исполняем → результат модели →
+         повторяем (до 6 итераций / 5 минут / стоп пользователя). */
+      const memoryTarget = projectId || "global";
+      let editsMade = false;
+      for (let iter = 0; iter < AGENT_MAX_ITER; iter++) {
+        if (signal && signal.aborted) break;
+        if (Date.now() - startedAt > AGENT_BUDGET_MS) {
+          emit.status({ text: "Лимит времени на инструменты (5 минут) — останавливаюсь, даю итог" });
+          break;
+        }
+        const blocks = agents.parseBlocks(finalText);
+        if (!blocks.length) break;
+
+        // Чистим видимый текст (блоки пользователю не показываем)
+        safeSend(win, "chat:cleanup", { chatId, text: agents.stripBlocks(finalText) });
+
+        const results = [];
+        for (const b of blocks) {
+          if (signal && signal.aborted) break;
+          safeSend(win, "chat:action", { chatId, card: agents.cardFor(b, "running") });
+          let r;
+          try {
+            r = await agents.execute(b, {
+              root,
+              memoryTarget,
+              confirm: (title, detail, extra) =>
+                askConfirm(win, chatId, title, detail, extra && extra.preview),
+            });
+          } catch (e) {
+            r = { ok: false, error: String(e.message || e).slice(0, 160) };
+          }
+          if (b.kind === "edit" && r.ok) editsMade = true;
+          safeSend(win, "chat:action", {
+            chatId,
+            card: { ...agents.cardFor(b, r.ok ? "ok" : "fail"), detail: String(r.error || r.text || "").slice(0, 400) },
+          });
+          results.push({ block: b, r });
+        }
+        if (signal && signal.aborted) break;
+        if (!results.length) break;
+
+        // Результат — новое системное сообщение для модели
+        const sysText = agents.formatResults(results);
+        chat.messages.push({ role: "user", content: sysText, at: Date.now(), system: true });
+        store.saveChat(chat);
+        safeSend(win, "chat:iter", { chatId });
+        emit.status({ text: "Продолжаю работу с учётом результатов инструментов…" });
+
+        // Следующий ход модели
+        let res2;
+        if (mode === "code" && judgeModel) {
+          // в код-режиме продолжает СУДЬЯ (сильная модель)
+          res2 = await runRequest(providers[judgeModel.providerId], {
+            model: judgeModel.id,
+            messages: buildProviderMessages(chat.messages),
+            signal,
+            onToken: (t) => emit.token(t),
+            onStatus: (st) => emit.status(st),
+          });
+        } else {
+          res2 = await runRequest(provider, {
+            model: modelId,
+            messages: buildProviderMessages(chat.messages),
+            signal,
+            chatId: chat.remoteId || undefined,
+            onToken: (t) => emit.token(t),
+            onStatus: (st) => emit.status(st),
+          });
+        }
+        if (!res2.ok) {
+          if (res2.aborted) break;
+          emit.status({ text: "Инструменты выполнены, но повторный запрос не удался: " + String(res2.message || "").slice(0, 120) });
+          break;
+        }
+        finalText = res2.text;
+      }
+
+      /* Финал */
+      const displayText = agents.stripBlocks(finalText).trim() || finalText.trim();
+      chat.messages.push({
+        role: "assistant", content: displayText, at: Date.now(),
+        council: councilMembers || undefined,
+      });
+      store.saveChat(chat);
+      emit.done({
+        text: displayText,
+        attempts: 1,
+        migratedFrom: null,
+        chatId, providerId, modelId,
+        codeMode: mode === "code",
+        council: councilMembers || undefined,
+        editsMade,
+        isSelf,
+      });
+      return chat;
+    } finally {
+      // ВСЕ инкогнито-окна закрываются после каждого промта
+      browserSvc.closeAll();
+      stopControllers.delete(chatId);
+    }
+  } catch (err) {
+    browserSvc.closeAll();
+    stopControllers.delete(chatId);
+    emit.error({ code: "engine", message: String(err.message || err).slice(0, 300), retryable: true });
+    return chat;
+  }
 }
 
-/**
- * Авто-миграция чата (когда лимит наполнен):
- *   1) новый чат (у Arena — реальный на сайте);
- *   2) проверочный запрос — убеждаемся, что новый чат отвечает;
- *   3) копирование истории;
- *   4) удаление старого (у провайдера + локальный архив).
- */
+/* ============================================================
+   АВТО-МИГРАЦИЯ ЧАТА (лимит наполнен)
+   ============================================================ */
 async function migrateChat(win, chat, provider, signal) {
   const st = (text) => safeSend(win, "chat:status", { chatId: chat.id, text });
 
@@ -326,6 +533,7 @@ async function migrateChat(win, chat, provider, signal) {
     title: chat.title,
     remoteId,
   });
+  next.project = chat.project || null;
   next.messages.push({
     role: "system",
     content: "Это продолжение предыдущего разговора. Ниже — краткая история для контекста:\n" + buildSummary(chat.messages),
@@ -343,8 +551,7 @@ async function migrateChat(win, chat, provider, signal) {
     onStatus: () => {},
   });
   if (!probe.ok) {
-    // новый чат не подтверждён — старый НЕ трогаем
-    store.archiveChat(next); // убираем «висячего»
+    store.archiveChat(next);
     throw new Error("новый чат не отвечает: " + (probe.message || "ошибка"));
   }
 
@@ -353,7 +560,7 @@ async function migrateChat(win, chat, provider, signal) {
 
   st("Перенос 4/4: новый чат работает — удаляю старый…");
   try { await provider.deleteChat(chat); } catch { /* best-effort */ }
-  store.archiveChat(chat); // локально «удаляем» (в архив)
+  store.archiveChat(chat);
   store.saveChat(next);
   return next;
 }
@@ -366,4 +573,4 @@ function safeSend(win, channel, payload) {
   } catch { /* окно закрывается — не критично */ }
 }
 
-module.exports = { sendChat, stopChat, providers, MAX_ATTEMPTS };
+module.exports = { sendChat, stopChat, confirmReply, providers, MAX_ATTEMPTS, AGENT_MAX_ITER };

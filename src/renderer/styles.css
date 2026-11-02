@@ -426,7 +426,7 @@ input, textarea, select { font-family: inherit; font-weight: 500; }
 /* ============================================================
    ЗОНА ВВОДА
    ============================================================ */
-.input-zone { flex: none; padding: 8px 30px 14px; }
+.input-zone { flex: none; padding: 8px 30px 14px; position: relative; }
 .chips-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {
@@ -707,3 +707,129 @@ select.f-input { cursor: pointer; }
   .files-split { flex-direction: column; }
   .files-list { width: 100%; max-height: 34%; }
 }
+
+/* ============================================================
+   v1.0.8 — режимы, проекты, плагины, память, инструменты ИИ
+   ============================================================ */
+
+/* --- Сегмент-переключатель режимов ИИ --- */
+.mode-seg {
+  display: flex; gap: 2px; padding: 3px; border-radius: 10px;
+  background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .09);
+}
+.mode-btn {
+  border: 0; background: transparent; color: var(--mut, #98a1b5);
+  font-size: 11.5px; font-weight: 700; padding: 4px 9px; border-radius: 8px;
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.mode-btn:hover { color: #e8ecf4; }
+.mode-btn.active {
+  background: linear-gradient(135deg, rgba(229, 113, 75, .35), rgba(147, 112, 219, .3));
+  color: #ffd9b0;
+}
+
+/* --- Селектор проекта --- */
+.project-sel {
+  max-width: 150px; font-size: 11.5px !important; padding: 4px 8px !important;
+  border-radius: 9px !important;
+}
+
+/* --- Slash-автодополнение команд --- */
+.slash-pop {
+  position: absolute; bottom: 100%; left: 8px; z-index: 60;
+  background: #1a1d24; border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px; overflow: hidden; min-width: 240px; max-width: 340px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+}
+.slash-pop.hidden { display: none; }
+.slash-item {
+  display: flex; gap: 8px; align-items: baseline; width: 100%;
+  padding: 7px 10px; border: 0; background: transparent; color: #e8ecf4;
+  font-size: 12px; cursor: pointer; text-align: left;
+}
+.slash-item:hover { background: rgba(229, 113, 75, .15); }
+.slash-item b { color: #ffb38a; }
+.slash-item span { color: #8b93a7; font-size: 11px; }
+
+/* --- Карточки инструментов ИИ в сообщении --- */
+.act-card {
+  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+  margin: 6px 0; padding: 6px 10px; border-radius: 9px;
+  background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .08);
+  font-size: 11.5px;
+}
+.act-card.running { border-color: rgba(255, 200, 120, .35); }
+.act-card.ok { border-color: rgba(86, 226, 143, .3); }
+.act-card.fail { border-color: rgba(255, 107, 87, .4); }
+.act-ico { font-size: 13px; }
+.act-title { font-weight: 700; color: #dfe5f0; }
+.act-detail { color: #8b93a7; word-break: break-all; max-width: 100%; }
+.act-spin { margin-left: auto; }
+.act-ok { margin-left: auto; color: #56e28f; font-weight: 800; }
+.act-bad { margin-left: auto; color: #ff6b57; font-weight: 800; }
+
+/* --- Системная сводка (результаты инструментов) --- */
+.sys-note {
+  margin: 4px 0; padding: 5px 10px; border-radius: 8px;
+  background: rgba(147, 112, 219, .08); border: 1px dashed rgba(147, 112, 219, .25);
+  font-size: 10.5px; color: #9aa3c0; word-break: break-word;
+}
+
+/* --- Теги сообщений (проект, плагин) --- */
+.msg-proj-tag, .msg-plugin-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px;
+  border-radius: 9px; font-size: 10px; font-weight: 700;
+  background: rgba(229, 113, 75, .15); color: #ffb38a;
+}
+.hist-proj {
+  font-size: 10px; font-weight: 600; color: #ffb38a; margin-left: 4px;
+}
+.hist-filter { width: 100%; margin: 8px 10px; font-size: 11.5px !important; }
+
+/* --- Self-баннер: перезапустить приложение --- */
+.self-restart-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 10px 8px; padding: 8px 12px; border-radius: 10px;
+  background: linear-gradient(135deg, rgba(229, 113, 75, .18), rgba(147, 112, 219, .15));
+  border: 1px solid rgba(229, 113, 75, .4);
+  font-size: 12px; color: #ffe3c8;
+}
+.self-restart-bar.hidden { display: none; }
+
+/* --- Плагины --- */
+.plug-intro, .mem-intro {
+  font-size: 11.5px; color: var(--mut, #98a1b5); line-height: 1.5; margin-bottom: 10px;
+}
+.plug-install-row { display: flex; gap: 8px; margin-bottom: 6px; }
+.plug-install-row input { flex: 1; }
+#plug-msg.ok { color: #56e28f; }
+#plug-msg.err { color: #ff8d7a; }
+.plug-card {
+  border: 1px solid rgba(255, 255, 255, .09); border-radius: 10px;
+  padding: 9px 11px; margin-bottom: 8px;
+}
+.plug-card.broken { opacity: .6; }
+.plug-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.plug-head b { font-size: 12.5px; }
+.plug-ver { font-size: 10px; color: #8b93a7; }
+.plug-cmds { font-size: 10.5px; color: #ffb38a; font-family: "JetBrains Mono", monospace; }
+.plug-del { margin-left: auto; }
+.plug-desc { font-size: 11px; color: #98a1b5; margin-top: 5px; }
+.plug-toggle { display: inline-flex; }
+
+/* --- Память --- */
+.mem-area { font-family: "JetBrains Mono", monospace; font-size: 11.5px !important; }
+.mem-actions { margin-top: 10px; }
+
+/* --- XRouter: несколько ключей --- */
+.xkiro-key-row {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 6px;
+}
+.xkiro-key-row input { flex: 1; }
+.xkiro-key-idx {
+  width: 18px; height: 18px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 10px; font-weight: 800;
+  background: rgba(229, 113, 75, .2); color: #ffb38a; flex: 0 0 auto;
+}
+.xkiro-key-del { flex: 0 0 auto; }
+.xkiro-key-del:disabled { opacity: .3; cursor: default; }

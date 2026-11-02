@@ -164,6 +164,8 @@
           <button class="drawer-tab glass-btn" id="dt-files" title="Файлы">📁 Файлы</button>
           <button class="drawer-tab glass-btn" id="dt-term" title="Терминал">❯_ Терминал</button>
           <button class="drawer-tab glass-btn" id="dt-conn" title="Коннекторы">🔌 Коннекторы</button>
+          <button class="drawer-tab glass-btn" id="dt-plugins" title="Плагины (установка по ссылке)">🧩 Плагины</button>
+          <button class="drawer-tab glass-btn" id="dt-memory" title="Память ИИ (глобальная + проектов)">🧠 Память</button>
           <div class="flex-sp"></div>
           <button class="icon-btn glass-btn" id="dt-close" title="Скрыть панель">×</button>
         </div>
@@ -289,6 +291,29 @@
             </div>
           </div>
         </div>
+
+        <!-- Панель плагинов -->
+        <div class="drawer-pane hidden" id="pane-plugins">
+          <div class="plug-intro"><b>Плагины</b> — пакеты команд для ИИ (plugin.json: команды /имя + контекст). Вставь ссылку на GitHub-репозиторий — установится и включится. В чате: <b>/команда аргументы</b>.</div>
+          <div class="plug-install-row">
+            <input class="f-input" id="plug-url" placeholder="https://github.com/автор/плагин" spellcheck="false">
+            <button class="glass-btn pill-btn primary" id="plug-install">🔗 Установить</button>
+          </div>
+          <div class="f-hint small" id="plug-msg"></div>
+          <div id="plug-list"></div>
+        </div>
+
+        <!-- Панель памяти ИИ -->
+        <div class="drawer-pane hidden" id="pane-memory">
+          <div class="mem-intro"><b>Память ИИ</b> — <b>глобальная</b> (одна на все чаты) и <b>проекта</b> (отдельная, только для чатов этого проекта). ИИ видит её в каждом чате и дописывает сам (инструмент «запомнить»); можно править вручную.</div>
+          <label class="f-label">Глобальная память (все чаты)</label>
+          <textarea class="f-input mem-area" id="mem-global" rows="6" placeholder="Факты, предпочтения, договорённости…" spellcheck="false"></textarea>
+          <label class="f-label" id="mem-proj-label">Память проекта: — (выбери проект в чате)</label>
+          <textarea class="f-input mem-area" id="mem-project" rows="6" placeholder="Выбери проект — его память появится здесь" spellcheck="false" disabled></textarea>
+          <div class="mem-actions">
+            <button class="glass-btn pill-btn primary" id="mem-save">💾 Сохранить память</button>
+          </div>
+        </div>
       </div>
 
       <!-- ЗОНА ВВОДА -->
@@ -318,11 +343,19 @@
 
         <div class="meta-row">
           <button class="icon-btn glass-btn" id="btn-plus" title="Прикрепить папку проекта">+</button>
+          <select class="f-input project-sel" id="proj-sel" title="Проект: своя память + папка автоматически прикладывается к чатам">
+            <option value="">📁 Проект: —</option>
+          </select>
+          <button class="glass-btn pill-btn sm" id="proj-new" title="Новый проект: папка + своя память ИИ">📁+</button>
           <button class="glass-btn pill-btn sm" id="btn-history" title="История чатов">🕘 История</button>
           <button class="glass-btn pill-btn sm screen-btn" id="btn-screen" title="Видение: приложить скриншот экрана к следующему сообщению (нужна модель с 👁)">📷 Экран</button>
           <button class="glass-btn pill-btn sm screen-btn" id="btn-screen-live" title="Live-видение: автоматически прикладывать свежий микроскриншот к КАЖДОМУ сообщению">👁 Live</button>
           <div class="flex-sp"></div>
-          <button class="glass-btn pill-btn sm code-btn" id="btn-code" title="Code-режим: самые мощные БЕСПЛАТНЫЕ модели думают вместе и приходят к одному выводу (нужен ключ XRouter)">🧠 Code</button>
+          <div class="mode-seg" title="Режим ИИ">
+            <button class="mode-btn active" id="mode-chat" title="Чат: отвечает выбранная модель">💬 Чат</button>
+            <button class="mode-btn" id="mode-code" title="Код: совет САМЫХ ЛУЧШИХ моделей (free + по твоим ключам) → один вывод">🧠 Код</button>
+            <button class="mode-btn" id="mode-self" title="Само-приложение: ИИ читает и правит файлы Charon Code (потом «Перезапустить»)">🛠 Self</button>
+          </div>
           <button class="glass-btn pill-btn model-badge" id="btn-model">
             <span id="model-name">…</span><span class="tier" id="model-tier">—</span>
           </button>
@@ -341,6 +374,9 @@
     <!-- ПОПОВЕР: история чатов -->
     <div class="pop glass hidden" id="pop-history">
       <div class="pop-head"><b>История чатов</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <select class="f-input hist-filter" id="hist-proj-filter" title="Показать чаты проекта">
+        <option value="">Все чаты (все проекты)</option>
+      </select>
       <div class="pop-models" id="pop-history-list"></div>
     </div>
 
@@ -354,8 +390,9 @@
       <label class="f-label">dahl.global · API key</label>
       <input class="f-input" id="key-dahl" type="password" placeholder="Bearer …" spellcheck="false">
 
-      <label class="f-label">XRouter · xkiro.com · XTROUTER_API_KEY</label>
-      <input class="f-input" id="key-xkiro" type="password" placeholder="XTROUTER_API_KEY — free-модели: Qwen, MiniMax, Mistral, SenseNova… + Code-режим" spellcheck="false">
+      <label class="f-label">XRouter · xkiro.com · XTROUTER_API_KEY (можно несколько — лимит на одном кончился → авто-переключение на другой)</label>
+      <div id="xkiro-keys"></div>
+      <button class="glass-btn sm" id="xkiro-add-key">＋ Ещё ключ</button>
 
       <label class="f-label">🐙 GitHub · Personal Access Token (коннектор)</label>
       <input class="f-input" id="key-github" type="password" placeholder="ghp_… / github_pat_… (scope: repo)" spellcheck="false">
@@ -383,6 +420,7 @@
         <option value="1.4">Больше</option>
       </select>
       <label class="check-row"><input type="checkbox" id="set-chime"> Тихий чим при завершении задачи</label>
+      <label class="check-row"><input type="checkbox" id="set-browser-visible" checked> Браузер ИИ: показывать окно (выкл — читать тихо в фоне). Всегда <b>ИНКОГНИТО</b> (отдельный чистый профиль), окно закрывается само после каждого промта.</label>
 
       <div class="pop-actions">
         <button class="glass-btn pill-btn" id="btn-session-3">↻ Обновить сессию Arena</button>
@@ -394,8 +432,16 @@
 
     <!-- ПОПОВЕР: What's new -->
     <div class="pop glass hidden" id="pop-whats">
-      <div class="pop-head"><b>What's new · 1.0.7</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
+      <div class="pop-head"><b>What's new · 1.0.8</b><button class="icon-btn" data-close title="Закрыть">×</button></div>
       <ul class="whats-list">
+        <li><b>1.0.8 — ИИ теперь АГЕНТ</b>: прикрепи папку (чип) или выбери проект — ИИ <b>видит ВСЕ файлы</b> в ней (список + содержимое уже в контексте), может <b>читать любые</b> (```read) и <b>редактировать</b> (```edit, с твоим подтверждением). Инструменты отрабатывают в петле: сделал — увидел результат — доработал, пока задача не закрыта.</li>
+        <li><b>🌐 Браузер ИИ — ТОЛЬКО инкогнито</b>: по команде ```browse: URL``` Charon открывает страницу в отдельном чистом профиле (ни одна твоя кука/пароль не участвует), отдаёт текст ИИ и <b>закрывает окно</b>; после каждого промта все окна закрываются. Тумблер: видимое окно / тихо в фоне (Настройки).</li>
+        <li><b>📁 Проекты + 🧠 Память</b>: проект = папка + <b>своя память</b> (отдельная на проект); глобальная память — 1 на все чаты. ИИ видит память в каждом чате и пишет в неё сам; вкладка «Память» — читать и править вручную. Фильтр чатов по проекту в Истории.</li>
+        <li><b>🧠 Код-режим: совет САМЫХ ЛУЧШИХ моделей</b> — теперь не только free: XRouter free + dahl (MiniMax M2.7, DeepSeek V4 Flash) + OpenRouter (топ :free) — по тем ключам, что у тебя в настройках. Судья — сильнейшая из доступных.</li>
+        <li><b>🔑 XRouter: несколько ключей</b> — вставь несколько XTROUTER_API_KEY (＋ Ещё ключ). Лимит на одном кончился (429) → авто-переключение на следующий; рабочий ключ запоминается.</li>
+        <li><b>🧩 Плагины по ссылке</b>: вкладка «Плагины» → вставь https://github.com/автор/плагин → установилось. Плагин = команды /имя (в чате, с автодополнением) + контекст для ИИ.</li>
+        <li><b>🛠 Режим Self</b>: ИИ читает и правит файлы САМОГО Charon Code (режим в строке чата). После правок — кнопка «Перезапустить». Чтобы правки сохранялись: установка НЕ в Program Files или запуск от админа.</li>
+        <li><b>🧹 Деинсталлятор «под чистую»</b>: новый uninstall.bat — ищет и убирает ВСЁ приложение со ВСЕХ дисков (реестр + AppData + Program Files + каталог установки + временные файлы), с подтверждением.</li>
         <li><b>1.0.7 — прикреплённые папки</b>: клик по папке (чипу) или «＋» — панель Файлы открывается сама и сразу показывает содержимое; файлы можно просматривать и редактировать (сохранение с подтверждением).</li>
         <li><b>Длинный текст в поле ввода идёт ВНИЗ</b> — поле растёт до 6 строк, потом прокручивается; Enter — отправить, Shift+Enter — новая строка.</li>
         <li><b>Настройки и все поповеры прокручиваются</b> — если не помещаются в окно, появился скролл, ничего не обрезается и не «съезжает».</li>

@@ -248,6 +248,7 @@ function registerIpc() {
   ipcMain.handle("files:pick", (e) => fsSvc.pickDir(BrowserWindow.fromWebContents(e.sender)));
   ipcMain.handle("files:open", (_e, p) => fsSvc.openPath(p));
   ipcMain.handle("files:reveal", (_e, p) => { fsSvc.revealPath(p); return { ok: true }; });
+  ipcMain.handle("files:saveTemp", (_e, name, data) => fsSvc.saveTemp(name, data));
 
   /* ---------- терминал ---------- */
   ipcMain.handle("terminal:run", (e, opts) => {

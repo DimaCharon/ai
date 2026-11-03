@@ -28,6 +28,7 @@ const { Xkiro } = require("./providers/xkiro");
 const { ProviderError } = require("./providers/base");
 const council = require("./council");
 const agents = require("./agents");
+const attachmentsSvc = require("./attachments");
 const memory = require("./memory");
 const plugins = require("./plugins");
 const browserSvc = require("./browser");
@@ -195,14 +196,16 @@ function buildContextText({ mode, root, project }) {
 
 /** Arena принимает ТОЛЬКО последнее пользовательское сообщение —
    весь контекст и хвост разговора вкладываем в него. */
-function arenaMessage(ctxText, msgs) {
+function arenaMessage(ctxText, msgs, fileText) {
   const tail = msgs.slice(-8)
     .filter((m) => !Array.isArray(m.content))
     .map((m) => (m.role === "user" ? "Я: " : "Charon: ") + String(m.content).slice(0, 4000))
     .join("\n\n");
+  const filesPart = fileText ? "\n\n[ПРИКРЕПЛЁННЫЕ ФАЙЛЫ (содержимое)]:\n" + fileText + "\n" : "";
   return (
     "[КОНТЕКСТ СИСТЕМЫ — это инструкции, память и файлы для работы, не текст пользователя]\n" +
     ctxText +
+    filesPart +
     "\n\n[НАШ РАЗГОВОР (конец)]:\n" +
     (tail || "(начало разговора)") +
     "\n\nОтветь на последнее сообщение (от «Я») обычным текстом."
@@ -234,6 +237,7 @@ async function sendChat(win, payload, signal) {
   const {
     chatId: inChatId, providerId, modelId, text: rawText, screen: screenIn,
     mode = "chat", projectId = null, attachedDir = null, pluginCmd = null,
+    files = null,
   } = payload;
   const provider = providers[providerId];
   if (!provider) throw new ProviderError("unknown", "Неизвестный провайдер: " + providerId);
@@ -248,6 +252,14 @@ async function sendChat(win, payload, signal) {
     done: (d) => safeSend(win, "chat:done", { chatId, ...d }),
     error: (e) => safeSend(win, "chat:error", { chatId, ...e }),
   };
+
+  /* Вложения (фото/видео/документы): решаем, что модель получит. */
+  const attach = attachmentsSvc.prepare(files, {
+    vision: provider.supportsVision(modelId),
+  });
+  for (const rej of attach.rejected) {
+    emit.status({ text: attachmentsSvc.rejectedMessage(rej, modelId) });
+  }
 
   try {
     /* 1. Доступность провайдера */
@@ -295,8 +307,9 @@ async function sendChat(win, payload, signal) {
       role: "user", content: rawText, at: Date.now(),
       screen: !!screenData, code: mode === "code", self: mode === "self",
       project: projectId || null, plugin: pluginMeta || undefined,
+      files: attach.names.length ? attach.names : undefined,
     });
-    if (screenIn && !screenData) {
+    if (screenIn && !screenData && !attach.imageParts.length) {
       emit.status({ text: "Модель " + modelId + " не видит изображения — шлю без скриншота. Выбери модель с меткой 👁 (XRouter/OpenRouter)." });
     }
 
@@ -330,23 +343,26 @@ async function sendChat(win, payload, signal) {
     }
 
     /* 4. Сообщения для провайдера */
+    const attachText = attach.textBlocks.map((t) => t.block).join("\n\n");
+    const attachImages = attach.imageParts; // [{type:'image_url',...}]
     const buildProviderMessages = (msgs) => {
       if (providerId === "arena") {
-        return [{ role: "user", content: arenaMessage(ctxText, msgs) }];
+        return [{ role: "user", content: arenaMessage(ctxText, msgs, attachText) }];
       }
       let lastUserIdx = -1;
       msgs.forEach((m, i) => { if (m.role === "user" && !m.system) lastUserIdx = i; });
       return [
         { role: "system", content: ctxText },
         ...msgs.map((m, i) => {
-          if (screenData && i === lastUserIdx && m.role === "user") {
-            return {
-              role: "user",
-              content: [
-                { type: "text", text: String(m.content) },
-                { type: "image_url", image_url: { url: screenData.dataUrl } },
-              ],
-            };
+          if (i === lastUserIdx && m.role === "user") {
+            const parts = [];
+            if (screenData || attachImages.length) {
+              parts.push({ type: "text", text: String(m.content) + (attachText ? "\n\n" + attachText : "") });
+              for (const img of attachImages) parts.push(img);
+              if (screenData) parts.push({ type: "image_url", image_url: { url: screenData.dataUrl } });
+              return { role: "user", content: parts };
+            }
+            return { role: "user", content: String(m.content) + (attachText ? "\n\n" + attachText : "") };
           }
           return { role: m.role, content: String(m.content) };
         }),
@@ -431,6 +447,7 @@ async function sendChat(win, payload, signal) {
             r = await agents.execute(b, {
               root,
               memoryTarget,
+              isSelf,
               confirm: (title, detail, extra) =>
                 askConfirm(win, chatId, title, detail, extra && extra.preview),
             });

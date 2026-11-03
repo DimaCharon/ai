@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld("cc", {
     pick: () => ipcRenderer.invoke("files:pick"),
     open: (p) => ipcRenderer.invoke("files:open", p),
     reveal: (p) => ipcRenderer.invoke("files:reveal", p),
+    saveTemp: (name, data) => ipcRenderer.invoke("files:saveTemp", name, data),
   },
 
   /* ---------- терминал ---------- */

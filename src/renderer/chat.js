@@ -38,10 +38,111 @@
     label: null,      // подпись для текущих assistant-сообщений
     council: null,    // ответы совета (приходят событием chat:council)
     selfEdits: false, // в Self-режиме были правки → показать «Перезапустить»
+    attachments: [],  // прикреплённые файлы: {name, path, size, kind}
   };
 
   const screenBtn = $("#btn-screen");
   const screenLiveBtn = $("#btn-screen-live");
+
+  /* ---------- ВЛОЖЕНИЯ: фото, видео, документы ЛЮБОГО формата ----------
+     📎 кнопка / перетащить файл в окно / Ctrl+V.
+     Что модель получит — решает main (attachments.js):
+       • текст-подобные → содержимое в промт;
+       • фото → только модели с 👁, иначе «модель не поддерживает формат»;
+       • видео/аудио/pdf/docx → «модель не поддерживает формат». */
+  const attachRow = $("#attach-row");
+  const fileInput = $("#file-input");
+  const btnAttach = $("#btn-attach");
+  const ATTACH_ICONS = { image: "🖼", video: "🎬", audio: "🎵", text: "📄", doc: "📦", other: "📎" };
+
+  function classifyKind(name) {
+    const ext = (String(name || "").split(".").pop() || "").toLowerCase();
+    if (["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(ext)) return "image";
+    if (["mp4", "mkv", "avi", "mov", "webm", "wmv", "flv", "m4v"].includes(ext)) return "video";
+    if (["mp3", "wav", "ogg", "oga", "opus", "flac", "m4a", "aac", "wma"].includes(ext)) return "audio";
+    if (["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "zip", "rar", "7z", "exe", "msi", "iso", "db"].includes(ext)) return "doc";
+    return "text";
+  }
+  function fmtSize(b) {
+    if (b >= 1048576) return (b / 1048576).toFixed(1) + " МБ";
+    if (b >= 1024) return Math.round(b / 1024) + " КБ";
+    return (b || 0) + " Б";
+  }
+  async function addFiles(fileList) {
+    const arr = Array.from(fileList || []);
+    for (const f of arr) {
+      if (!f || !f.name) continue;
+      if (state.attachments.length >= 10) {
+        CC.toast("Не больше 10 файлов в одном сообщении", "err");
+        break;
+      }
+      if (state.attachments.some((a) => a.name === f.name && a.size === f.size)) continue;
+      let p = f.path || "";
+      if (!p) {
+        // файл без пути (картинка из буфера) → сохраним во временную папку
+        try {
+          const buf = await f.arrayBuffer();
+          const r = await cc.files.saveTemp(f.name, buf);
+          if (!r || !r.ok) { CC.toast("Файл: " + ((r && r.error) || "не удалось сохранить"), "err"); continue; }
+          p = r.path;
+        } catch (e) {
+          CC.toast("Файл: " + String(e.message || e).slice(0, 90), "err");
+          continue;
+        }
+      }
+      state.attachments.push({ name: f.name, path: p, size: f.size || 0, kind: classifyKind(f.name) });
+    }
+    renderAttach();
+  }
+  function renderAttach() {
+    if (!attachRow) return;
+    attachRow.innerHTML = "";
+    if (!state.attachments.length) { attachRow.classList.add("hidden"); return; }
+    attachRow.classList.remove("hidden");
+    state.attachments.forEach((a, i) => {
+      const chip = document.createElement("span");
+      chip.className = "attach-chip glass";
+      chip.title = a.path;
+      const lab = document.createElement("span");
+      lab.textContent = (ATTACH_ICONS[a.kind] || "📎") + " " + a.name + (a.size ? " (" + fmtSize(a.size) + ")" : "");
+      const x = document.createElement("b");
+      x.className = "attach-x";
+      x.title = "Убрать файл";
+      x.textContent = "✕";
+      x.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        state.attachments.splice(i, 1);
+        renderAttach();
+      });
+      chip.appendChild(lab);
+      chip.appendChild(x);
+      attachRow.appendChild(chip);
+    });
+  }
+  if (btnAttach && fileInput) btnAttach.addEventListener("click", () => fileInput.click());
+  if (fileInput) fileInput.addEventListener("change", () => { addFiles(fileInput.files); fileInput.value = ""; });
+  /* drag&drop в окно */
+  ["dragenter", "dragover"].forEach((ev) =>
+    document.addEventListener(ev, (e) => {
+      e.preventDefault();
+      chatEl && chatEl.classList.add("drop-hot");
+    })
+  );
+  document.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    if (e.relatedTarget) return;
+    chatEl && chatEl.classList.remove("drop-hot");
+  });
+  document.addEventListener("drop", (e) => {
+    e.preventDefault();
+    chatEl && chatEl.classList.remove("drop-hot");
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+  });
+  /* Ctrl+V — файлы из буфера (скриншот, картинка) */
+  inputEl && inputEl.addEventListener("paste", (e) => {
+    const fl = e.clipboardData && e.clipboardData.files;
+    if (fl && fl.length) { e.preventDefault(); addFiles(fl); }
+  });
 
   /* ---------- «видение» экрана: микроскриншоты ---------- */
   function currentModelVision() {
@@ -158,7 +259,8 @@
 
   /* ---------- отправка: 1 нажатие = 1 ответ ---------- */
   async function send(raw) {
-    const text = (raw != null ? raw : inputEl.value).trim();
+    const hasFiles = state.attachments.length > 0;
+    const text = ((raw != null ? raw : inputEl.value).trim()) || (hasFiles ? "(прикреплённый файл)" : "");
     if (!text || state.busy || !state.providerId) return;
     inputEl.value = "";
     autoSize();
@@ -192,7 +294,8 @@
       (state.mode === "code" ? '<span class="msg-code-tag">🧠 Код</span>' : "") +
       (state.mode === "self" ? '<span class="msg-code-tag">🛠 Self</span>' : "") +
       (pluginCmd ? '<span class="msg-plugin-tag">🧩 /' + esc(pluginCmd.name) + "</span>" : "") +
-      (state.project ? '<span class="msg-proj-tag">📁 ' + esc(state.project.name) + "</span>" : "");
+      (state.project ? '<span class="msg-proj-tag">📁 ' + esc(state.project.name) + "</span>" : "") +
+      state.attachments.map((a) => '<span class="msg-file-tag">' + (ATTACH_ICONS[a.kind] || "📎") + " " + esc(a.name) + "</span>").join("");
 
     showChatView();
     pushMsg("user", esc(text) + tags);
@@ -233,7 +336,10 @@
       projectId: state.projectId,
       attachedDir,
       pluginCmd,
+      files: state.attachments.map((a) => a.path),
     });
+    state.attachments = [];
+    renderAttach();
     // результат придёт событиями: chat:status / chat:token / chat:council /
     // chat:action / chat:iter / chat:cleanup / chat:confirm / chat:done / chat:error
   }
@@ -553,7 +659,8 @@
           (m.screen ? '<span class="msg-screen-tag">📷 экран</span>' : "") +
           (m.code ? '<span class="msg-code-tag">🧠 Код</span>' : "") +
           (m.self ? '<span class="msg-code-tag">🛠 Self</span>' : "") +
-          (m.plugin ? '<span class="msg-plugin-tag">🧩 /' + esc(m.plugin.command) + "</span>" : ""), chat.model);
+          (m.plugin ? '<span class="msg-plugin-tag">🧩 /' + esc(m.plugin.command) + "</span>" : "") +
+          (m.files && m.files.length ? m.files.map((f) => '<span class="msg-file-tag">📎 ' + esc(f) + "</span>").join("") : ""), chat.model);
       } else {
         const body = pushMsg("assistant", esc(m.content), chat.model);
         if (m.council && m.council.length) insertCouncilBlock(body, m.council);

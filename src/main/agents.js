@@ -25,6 +25,7 @@ const fs = require("fs");
 const path = require("path");
 const browser = require("./browser");
 const memory = require("./memory");
+const selfcheck = require("./selfcheck");
 
 const MAX_READ_BYTES = 200 * 1024;   // 200 КБ на read
 const MAX_READ_INJECT = 40 * 1024;   // сколько отдаём модели
@@ -42,7 +43,7 @@ const TEXT_EXT = new Set([
 function abilitiesPrompt(root, isSelf) {
   let what;
   if (isSelf) {
-    what = "ФАЙЛАМИ САМОГО ПРИЛОЖЕНИЯ Charon Code (папка: " + root + "). После правок пользователь перезапустит приложение — изменения вступят.";
+    what = "ФАЙЛАМИ САМОГО ПРИЛОЖЕНИЯ Charon Code (папка: " + root + "). После правок пользователь перезапустит приложение — изменения вступят. ПРАВИЛА САМОПРАВКИ: (1) ПЕРЕД правкой ОБЯЗАТЕЛЬНО прочитай файл полностью через ```read:``` — никогда не перезаписывай файл, которого не читал; (2) в блоке edit — ПОЛНОЕ новое содержимое файла с ВСЕМИ прежними строками кроме нужных изменений (ничего не сокращай, «// остальное без изменений» писать НЕЛЬЗЯ); (3) никогда не удаляй require(\"electron\"), app.whenReady, создание окна; (4) после записи система сама проверяет приложение и ОТКАТЫВАЕТ правку, если оно сломано — тогда получишь ошибку и должен исправить.";
   } else if (root) {
     what = "ФАЙЛАМИ ПРИКРЕПЛЁННОЙ ПАПКИ «" + path.basename(root) + "» (путь: " + root + ").";
   } else {
@@ -282,8 +283,42 @@ async function execute(block, ctx) {
         if (!ok) return { ok: false, error: "Пользователь отменил запись" };
       }
       fs.mkdirSync(path.dirname(p), { recursive: true });
+      const prevContent = existed ? fs.readFileSync(p, "utf8") : null;
       fs.writeFileSync(p, content, "utf8");
-      return { ok: true, text: "Файл " + (existed ? "перезаписан" : "создан") + ": " + rel + " (" + Buffer.byteLength(content) + " B)" };
+
+      /* SELF-РЕЖИМ: самопроверка приложения после правки.
+         Если ИИ сломал файл (синтаксис / не импортировал ipcMain и т.п.)
+         — правка ОТКАТЫВАЕТСЯ, приложение остаётся рабочим. */
+      let selfCheckInfo = "";
+      if (ctx.isSelf) {
+        const vc = selfcheck.validateApp(root);
+        // файл сильно ужался при перезаписи → почти наверняка обрезка,
+        // а не точечная правка
+        if (prevContent != null && Buffer.byteLength(prevContent) > 500) {
+          const shrink = 1 - Buffer.byteLength(content) / Buffer.byteLength(prevContent);
+          if (shrink > 0.4) {
+            vc.problems.push({ file: rel, problem: "файл стал на " + Math.round(shrink * 100) + "% меньше при перезаписи — похоже на обрезку, а не точечную правку (нужно ПОЛНОЕ содержимое)" });
+          }
+        }
+        if (!vc.ok) {
+          if (prevContent != null) fs.writeFileSync(p, prevContent, "utf8");
+          else { try { fs.unlinkSync(p); } catch { /* ok */ } }
+          const list = vc.problems.slice(0, 3)
+            .map((x) => "• " + x.file + ": " + x.problem)
+            .join("\n");
+          return {
+            ok: false,
+            error:
+              "САМОПРОВЕРКА НЕ ПРОШЛА — правка «" + rel + "» ОТКАТАНА, файлы не изменены. " +
+              "Исправь и пришли блок edit заново:\n" + list,
+          };
+        }
+        selfCheckInfo = " (самопроверка приложения пройдена: " + vc.files + " файла OK)";
+      }
+      return {
+        ok: true,
+        text: "Файл " + (existed ? "перезаписан" : "создан") + ": " + rel + " (" + Buffer.byteLength(content) + " B)" + selfCheckInfo,
+      };
     }
     case "browse": {
       const res = await browser.browse(block.arg, { capture: false });

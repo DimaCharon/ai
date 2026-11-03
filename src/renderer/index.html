@@ -330,6 +330,8 @@
           <span id="screen-preview-cap"></span>
         </div>
 
+        <div class="attach-row hidden" id="attach-row" title="Файлы, прикреплённые к следующему сообщению"></div>
+
         <div class="input-bar glass">
           <textarea id="chat-input" rows="1" placeholder="Спроси что угодно… (Enter — отправить, Shift+Enter — новая строка)" autocomplete="off" spellcheck="false"></textarea>
           <button class="send-btn glass-btn hidden" id="btn-stop" title="Остановить">■</button>
@@ -350,6 +352,8 @@
           <button class="glass-btn pill-btn sm" id="btn-history" title="История чатов">🕘 История</button>
           <button class="glass-btn pill-btn sm screen-btn" id="btn-screen" title="Видение: приложить скриншот экрана к следующему сообщению (нужна модель с 👁)">📷 Экран</button>
           <button class="glass-btn pill-btn sm screen-btn" id="btn-screen-live" title="Live-видение: автоматически прикладывать свежий микроскриншот к КАЖДОМУ сообщению">👁 Live</button>
+          <button class="glass-btn pill-btn sm" id="btn-attach" title="Прикрепить файлы к сообщению: фото, видео, документы ЛЮБОГО формата (можно перетащить в окно или вставить Ctrl+V)">📎 Файлы</button>
+          <input type="file" id="file-input" multiple class="hidden" title="">
           <div class="flex-sp"></div>
           <div class="mode-seg" title="Режим ИИ">
             <button class="mode-btn active" id="mode-chat" title="Чат: отвечает выбранная модель">💬 Чат</button>

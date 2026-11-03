@@ -786,6 +786,39 @@ select.f-input { cursor: pointer; }
 }
 .hist-filter { width: 100%; margin: 8px 10px; font-size: 11.5px !important; }
 
+/* --- Вложения: прикреплённые файлы --- */
+.msg-file-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px;
+  border-radius: 9px; font-size: 10px; font-weight: 600; max-width: 220px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: rgba(120, 150, 255, .15); color: #a8c0ff;
+}
+.attach-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 4px 10px; margin-bottom: 4px;
+}
+.attach-row.hidden { display: none; }
+.attach-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 10px;
+  background: rgba(120, 150, 255, .14); border: 1px solid rgba(120, 150, 255, .28);
+  color: #cdd8ff; font-size: 11px; font-weight: 600;
+  max-width: 240px;
+}
+.attach-chip > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-x {
+  cursor: pointer; font-weight: 800; font-style: normal;
+  color: #ff9d80; padding: 0 2px; border-radius: 4px; line-height: 1;
+}
+.attach-x:hover { background: rgba(255, 120, 90, .25); }
+
+/* подсветка при перетаскивании файлов в окно */
+#chat.drop-hot {
+  outline: 2px dashed rgba(120, 160, 255, .8);
+  outline-offset: -6px;
+  border-radius: 14px;
+}
+
 /* --- Self-баннер: перезапустить приложение --- */
 .self-restart-bar {
   display: flex; align-items: center; gap: 10px;

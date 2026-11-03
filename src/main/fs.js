@@ -17,7 +17,7 @@ const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
-const { dialog, shell } = require("electron");
+const { app, dialog, shell } = require("electron");
 
 const HOME = os.homedir();
 const MAX_PREVIEW = 2 * 1024 * 1024; // 2 МБ для предпросмотра
@@ -172,4 +172,27 @@ function safeSend(win, channel, payload) {
   } catch { /* окно закрывается */ }
 }
 
-module.exports = { listDir, readFile, writeFile, pickDir, openPath, revealPath, run, kill, HOME };
+/**
+ * Сохранить файл без пути (например, картинку из буфера обмена Ctrl+V)
+ * во временную папку приложения. Возвращает путь для отправки модели.
+ * @param {string} name
+ * @param {Uint8Array|Buffer|ArrayBuffer} data
+ */
+function saveTemp(name, data) {
+  try {
+    const dir = path.join(app.getPath("userData"), "tmp");
+    fs.mkdirSync(dir, { recursive: true });
+    const safe = String(name || "file")
+      .replace(/[^a-zA-Z0-9._\-\u0400-\u04FF\u00C0-\u017F ]/g, "_")
+      .slice(-60);
+    const p = path.join(dir, Date.now() + "-" + crypto.randomBytes(3).toString("hex") + "-" + safe);
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    if (buf.length > 25 * 1024 * 1024) return { ok: false, error: "файл больше 25 МБ" };
+    fs.writeFileSync(p, buf);
+    return { ok: true, path: p };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e).slice(0, 120) };
+  }
+}
+
+module.exports = { listDir, readFile, writeFile, pickDir, openPath, revealPath, run, kill, saveTemp, HOME };
